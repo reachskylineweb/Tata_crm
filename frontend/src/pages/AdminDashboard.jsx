@@ -1,25 +1,20 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, LineChart, Line, CartesianGrid, Legend
+  ResponsiveContainer, CartesianGrid, Legend
 } from 'recharts';
-import { Users, Phone, CheckCircle, Clock, TrendingUp, Activity, Building2 } from 'lucide-react';
+import { Users, Phone, CheckCircle, Clock, TrendingUp, Activity, Building2, Calendar, MessageSquare, AlertCircle, X, Download, ChevronRight } from 'lucide-react';
 import api from '../api/client';
+import toast from 'react-hot-toast';
 
-const COLORS = ['#003A8F', '#12B76A', '#F79009', '#F04438', '#7C3AED'];
+const COLORS = ['#003A8F', '#12B76A', '#F79009', '#F04438', '#7C3AED', '#FFBB28', '#FF8042', '#0088FE', '#00C49F'];
+const STATUS_COLORS = { 'In Progress': '#F79009', 'On Call': '#003A8F', 'Completed': '#12B76A' };
 
-const STATUS_COLORS = {
-  'In Progress': '#F79009',
-  'On Call': '#003A8F',
-  'Completed': '#12B76A',
-};
-
-function StatCard({ label, value, icon: Icon, color, sub }) {
+function StatCard({ label, value, icon: Icon, color, sub, onClick }) {
   return (
-    <div className="stat-card">
-      <div className={`stat-icon ${color}`}>
-        <Icon size={22} />
-      </div>
+    <div className={`stat-card ${onClick ? 'clickable' : ''}`} onClick={onClick} style={{ cursor: onClick ? 'pointer' : 'default' }}>
+      <div className={`stat-icon ${color}`}><Icon size={20} /></div>
       <div className="stat-content">
         <div className="stat-label">{label}</div>
         <div className="stat-value">{value?.toLocaleString() ?? '—'}</div>
@@ -30,136 +25,127 @@ function StatCard({ label, value, icon: Icon, color, sub }) {
 }
 
 export default function AdminDashboard() {
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
-  useEffect(() => {
-    api.get('/dashboard/admin')
+  const fetchData = useCallback(() => {
+    setLoading(true);
+    api.get('/dashboard/admin', { params: { date_from: dateFrom, date_to: dateTo } })
       .then(r => setData(r.data.data))
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, []);
+  }, [dateFrom, dateTo]);
 
-  if (loading) return (
-    <div className="loading-overlay">
-      <div className="spinner" />
-      <span className="loading-text">Loading dashboard analytics...</span>
-    </div>
-  );
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const handleExport = async () => {
+    if (!dateFrom || !dateTo) { toast.error('Please select both From and To dates'); return; }
+    const loadingToast = toast.loading('Exporting...');
+    try {
+      const res = await api.get('/leads', { params: { date_from: dateFrom, date_to: dateTo, limit: 100000 } });
+      const leads = res.data.data;
+      if (!leads.length) { toast.error('No leads found'); toast.dismiss(loadingToast); return; }
+      const headers = ['DATE', 'NAME', 'PHONE', 'LOCATION', 'VEHICLE', 'REMARK', 'DSE', 'STATUS'];
+      const csv = [headers.join(','), ...leads.map(l => [l.lead_date, l.full_name, l.phone_number, l.location, l.model, l.voice_of_customer, l.assigned_to_dse, l.status].join(','))].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `Leads_Export_${dateFrom}_to_${dateTo}.csv`;
+      link.click();
+      toast.success('Downloaded!');
+    } catch { toast.error('Export failed'); } finally { toast.dismiss(loadingToast); }
+  };
+
+  if (loading && !data) return <div className="loading-overlay"><div className="spinner" /></div>;
 
   const s = data?.summary || {};
   const convRate = s.conversion_rate || 0;
-
-  // Clean dealer names for charts
   const chartData = (data?.dealer_performance || []).map(d => ({
-    ...d,
-    dealer_name: d.dealer_name.replace(/\s*Dealer\s*Partner\s*/gi, '')
+    ...d, dealer_name: d.dealer_name.replace(/\s*Dealer\s*Partner\s*/gi, '')
   }));
 
   return (
-    <div>
+    <div className="dashboard-container">
       <div className="page-header">
         <div className="page-header-left">
           <h2>Admin Dashboard</h2>
-          <p>Real-time analytics for Tata Motors advertisement leads</p>
+          <p>Global oversight of Tata Motors CRM performance</p>
         </div>
         <div className="page-header-actions">
-          <span style={{ fontSize: '0.8rem', color: 'var(--grey-400)' }}>
-            {new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-          </span>
+          <div className="date-picker-wrap" style={{ display: 'flex', gap: 10, background: '#fff', padding: '6px 14px', borderRadius: 12, border: '1px solid var(--grey-200)', flexWrap: 'wrap' }}>
+            <Calendar size={14} color="var(--grey-400)" />
+            <input type="date" className="date-input-clean" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ border: 'none', fontSize: '0.82rem', fontWeight: 600, outline: 'none' }} />
+            <span style={{ color: 'var(--grey-200)' }}>→</span>
+            <input type="date" className="date-input-clean" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ border: 'none', fontSize: '0.82rem', fontWeight: 600, outline: 'none' }} />
+          </div>
+          <button className="btn btn-primary" onClick={handleExport}><Download size={16} /> Export</button>
         </div>
       </div>
 
-      {/* Stat Cards */}
-      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
-        <StatCard label="Total Leads" value={s.total_leads} icon={Users} color="blue" sub="All time" />
-        <StatCard label="Pending Follow-ups" value={s.pending_followups} icon={Clock} color="orange" sub="Action needed" />
-        <StatCard label="Completed" value={s.completed} icon={CheckCircle} color="green" sub="Completed" />
-        <StatCard label="Conversion Rate" value={`${convRate}%`} icon={TrendingUp} color="purple" sub="Completion rate" />
+      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)', marginBottom: 24 }}>
+        <StatCard label="Total Leads" value={s.total_leads} icon={Users} color="blue" sub="Overall" onClick={() => navigate('/dealers')} />
+        <StatCard label="Pending" value={s.pending_leads} icon={AlertCircle} color="orange" sub="Awaiting action" />
+        <StatCard label="Follow-ups" value={s.pending_followups} icon={Clock} color="purple" sub="Action needed" />
+        <StatCard label="Completed" value={s.completed} icon={CheckCircle} color="green" sub="Total closed" />
+        <StatCard label="Completion %" value={`${convRate}%`} icon={TrendingUp} color="blue" sub="Current accuracy" />
       </div>
 
-      {/* Charts Row 1 */}
-      <div className="dashboard-grid" style={{ marginBottom: 20 }}>
-        {/* Lead Status Pie */}
+      <div className="dashboard-grid">
+        {/* Lead Status */}
         <div className="card col-4">
-          <div className="card-header">
-            <div className="card-title"><Activity size={16} />Lead Status Overview</div>
-          </div>
-          <div className="card-body">
-            <ResponsiveContainer width="100%" height={220}>
+          <div className="card-header"><div className="card-title"><Activity size={16} /> Status Overview</div></div>
+          <div className="card-body chart-card-body">
+            <ResponsiveContainer width="100%" height={240}>
               <PieChart>
-                <Pie
-                  data={data?.status_distribution || []}
-                  dataKey="count"
-                  nameKey="status"
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={55}
-                  outerRadius={85}
-                  paddingAngle={3}
-                >
+                <Pie data={data?.status_distribution || []} dataKey="count" nameKey="status" cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={4}>
                   {(data?.status_distribution || []).map((entry, i) => (
-                    <Cell key={i} fill={STATUS_COLORS[entry.status] || COLORS[i]} />
+                    <Cell key={i} fill={STATUS_COLORS[entry.status] || COLORS[i % COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(v, n) => [v.toLocaleString(), n]} />
+                <Tooltip />
+                <Legend layout="horizontal" verticalAlign="bottom" align="center" iconType="circle" />
               </PieChart>
             </ResponsiveContainer>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
-              {(data?.status_distribution || []).map((d, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{ width: 10, height: 10, borderRadius: 2, background: STATUS_COLORS[d.status] || COLORS[i] }} />
-                    <span style={{ color: 'var(--grey-600)' }}>{d.status}</span>
-                  </div>
-                  <span style={{ fontWeight: 700, color: 'var(--grey-900)' }}>{d.count?.toLocaleString()}</span>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
 
-        {/* Daily Trend */}
+        {/* Telecaller Remarks — Centered & Spaced */}
         <div className="card col-8">
-          <div className="card-header">
-            <div className="card-title"><TrendingUp size={16} />Lead Upload Trend (Last 30 Days)</div>
-          </div>
-          <div className="card-body">
-            <ResponsiveContainer width="100%" height={240}>
-              <LineChart data={data?.daily_trend || []}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--grey-100)" />
-                <XAxis dataKey="date_label" tick={{ fontSize: 11, fill: 'var(--grey-400)' }} />
-                <YAxis tick={{ fontSize: 11, fill: 'var(--grey-400)' }} />
+          <div className="card-header"><div className="card-title"><MessageSquare size={16} /> Telecaller Remarks</div></div>
+          <div className="card-body chart-card-body">
+            <ResponsiveContainer width="100%" height={260}>
+              <PieChart>
+                <Pie data={data?.remark_distribution || []} dataKey="count" nameKey="status" cx="50%" cy="50%" innerRadius={55} outerRadius={95} paddingAngle={2}>
+                  {(data?.remark_distribution || []).map((entry, i) => (
+                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                  ))}
+                </Pie>
                 <Tooltip />
-                <Line type="monotone" dataKey="count" stroke="#003A8F" strokeWidth={2.5} dot={{ r: 3, fill: '#003A8F' }} name="Leads" />
-              </LineChart>
+                <Legend
+                  layout="horizontal"
+                  verticalAlign="bottom"
+                  align="center"
+                  wrapperStyle={{ paddingTop: 20, fontSize: '0.75rem' }}
+                />
+              </PieChart>
             </ResponsiveContainer>
           </div>
         </div>
-      </div>
 
-      {/* Charts Row 2 */}
-      <div className="dashboard-grid" style={{ marginBottom: 20 }}>
-        {/* Dealer Performance Bar */}
-        <div className="card col-8">
-          <div className="card-header">
-            <div className="card-title"><Building2 size={16} />Telecalling Performance by Dealer</div>
-          </div>
-          <div className="card-body">
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={chartData.slice(0, 12)} margin={{ top: 20, right: 30, left: 0, bottom: 60 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--grey-100)" vertical={false} />
-                <XAxis 
-                  dataKey="dealer_name" 
-                  tick={{ fontSize: 10, fill: 'var(--grey-500)', fontWeight: 500 }} 
-                  interval={0} 
-                  angle={-30} 
-                  textAnchor="end"
-                  dy={10}
-                />
-                <YAxis tick={{ fontSize: 11, fill: 'var(--grey-400)' }} />
-                <Tooltip contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
-                <Legend verticalAlign="top" height={36} wrapperStyle={{ fontSize: '0.8rem', paddingTop: '0px' }} />
+        {/* Dealer Graph — Spacing Fix */}
+        <div className="card col-12">
+          <div className="card-header"><div className="card-title"><Building2 size={16} /> Telecaller Performance by Dealer</div></div>
+          <div className="card-body" style={{ padding: '24px 10px' }}>
+            <ResponsiveContainer width="100%" height={320}>
+              <BarChart data={chartData.slice(0, 10)} margin={{ top: 20, right: 30, left: 10, bottom: 60 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--grey-50)" />
+                <XAxis dataKey="dealer_name" tick={{ fontSize: 10, fontWeight: 700 }} angle={-30} textAnchor="end" interval={0} dy={15} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip />
+                <Legend verticalAlign="top" height={40} wrapperStyle={{ fontSize: '0.85rem', fontWeight: 600 }} />
                 <Bar dataKey="total_leads" name="Total Leads" fill="#003A8F" radius={[4, 4, 0, 0]} barSize={32} />
                 <Bar dataKey="completed" name="Completed" fill="#12B76A" radius={[4, 4, 0, 0]} barSize={32} />
               </BarChart>
@@ -167,108 +153,76 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Lead Conversion */}
-        <div className="card col-4">
-          <div className="card-header">
-            <div className="card-title"><TrendingUp size={16} />Lead Conversion Rate</div>
-          </div>
-          <div className="card-body" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '30px 20px' }}>
-            {/* Gauge-style display */}
-            <div style={{
-              width: 140, height: 140, borderRadius: '50%',
-              background: `conic-gradient(#003A8F ${convRate * 3.6}deg, var(--grey-100) 0deg)`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              position: 'relative', marginBottom: 16
-            }}>
-              <div style={{
-                width: 100, height: 100, borderRadius: '50%', background: '#fff',
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <div style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--tata-blue)' }}>{convRate}%</div>
-              </div>
+        {/* Campaign Metrics Table → Cards on Mobile */}
+        <div className="card col-6">
+          <div className="card-header"><div className="card-title"><TrendingUp size={16} /> Campaign Metrics Summary</div></div>
+          <div className="card-body" style={{ padding: 0 }}>
+            {/* Desktop Table View */}
+            <div className="desktop-table-view">
+              <table className="data-table">
+                <thead><tr><th>Date</th><th>Leads</th><th>Spend</th></tr></thead>
+                <tbody>
+                  {(data?.campaign_metrics || []).slice(0, 5).map((m, i) => (
+                    <tr key={i}>
+                      <td style={{ fontWeight: 600 }}>{m.date_label}</td>
+                      <td><span className="badge badge-blue">{m.total_leads}</span></td>
+                      <td style={{ fontWeight: 700 }}>₹{parseFloat(m.ad_spend).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <div style={{ width: '100%' }}>
-              {(data?.dealer_performance || []).slice(0, 5).map((d, i) => (
-                <div key={i} style={{ marginBottom: 10 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: 'var(--grey-600)', marginBottom: 3 }}>
-                    <span>{d.dealer_name.replace(/\s*Dealer\s*Partner\s*/gi, '')}</span>
-                    <span style={{ fontWeight: 600 }}>{d.conversion_rate || 0}%</span>
+            {/* Mobile Card List */}
+            <div className="mobile-only" style={{ padding: 16 }}>
+              {(data?.campaign_metrics || []).slice(0, 5).map((m, i) => (
+                <div key={i} className="mobile-card-item" style={{ marginBottom: 10 }}>
+                  <div className="card-list-row">
+                    <span className="card-list-label">{m.date_label}</span>
+                    <span className="badge badge-blue" style={{ minWidth: 60 }}>{m.total_leads} Leads</span>
                   </div>
-                  <div className="progress-bar">
-                    <div className="progress-fill" style={{ width: `${d.conversion_rate || 0}%` }} />
+                  <div className="card-list-row" style={{ marginTop: 8 }}>
+                    <span className="card-list-label">Ad Spend</span>
+                    <span style={{ fontWeight: 800 }}>₹{parseFloat(m.ad_spend).toLocaleString()}</span>
                   </div>
                 </div>
               ))}
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Campaign Metrics & Recent Activity */}
-      <div className="dashboard-grid">
-        {/* Campaign Metrics */}
+        {/* Recent Activities Table → Cards on Mobile */}
         <div className="card col-6">
-          <div className="card-header">
-            <div className="card-title"><TrendingUp size={16} />Campaign Metrics</div>
-          </div>
-          <div className="table-wrapper" style={{ border: 'none', borderRadius: 0 }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Total Leads</th>
-                  <th>Ad Spend (₹)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(data?.campaign_metrics || []).slice(0, 8).map((m, i) => (
-                  <tr key={i}>
-                    <td>{m.date_label}</td>
-                    <td><span className="badge badge-blue">{m.total_leads}</span></td>
-                    <td>₹{parseFloat(m.ad_spend || 0).toLocaleString('en-IN')}</td>
-                  </tr>
-                ))}
-                {(!data?.campaign_metrics?.length) && (
-                  <tr><td colSpan={3} style={{ textAlign: 'center', color: 'var(--grey-400)', padding: 20 }}>No campaign data yet</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Recent Activity */}
-        <div className="card col-6">
-          <div className="card-header">
-            <div className="card-title"><Activity size={16} />Recent Activity</div>
-          </div>
-          <div className="table-wrapper" style={{ border: 'none', borderRadius: 0 }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Lead Name</th>
-                  <th>Dealer</th>
-                  <th>Status</th>
-                  <th>Time</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(data?.recent_activity || []).map((r, i) => (
-                  <tr key={i}>
-                    <td style={{ fontWeight: 500 }}>{r.full_name}</td>
-                    <td style={{ fontSize: '0.8rem', color: 'var(--grey-400)' }}>{r.dealer_name.replace(/\s*Dealer\s*Partner\s*/gi, '')}</td>
-                    <td>
-                      <span className={`badge status-${r.status?.toLowerCase().replace(' ', '-')}`}>{r.status}</span>
-                    </td>
-                    <td style={{ fontSize: '0.78rem', color: 'var(--grey-400)' }}>
-                      {new Date(r.updated_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                    </td>
-                  </tr>
-                ))}
-                {(!data?.recent_activity?.length) && (
-                  <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--grey-400)', padding: 20 }}>No recent activity</td></tr>
-                )}
-              </tbody>
-            </table>
+          <div className="card-header"><div className="card-title"><Activity size={16} /> Recent Dealer Activity</div></div>
+          <div className="card-body" style={{ padding: 0 }}>
+            {/* Desktop Table View */}
+            <div className="desktop-table-view">
+              <table className="data-table">
+                <thead><tr><th>Name</th><th>Dealer</th><th>Status</th></tr></thead>
+                <tbody>
+                  {(data?.recent_activity || []).map((r, i) => (
+                    <tr key={i}>
+                      <td style={{ fontWeight: 700 }}>{r.full_name}</td>
+                      <td style={{ color: 'var(--grey-500)', fontSize: '0.8rem' }}>{r.dealer_name.replace(/\s*Partner\s*/gi, '')}</td>
+                      <td><span className={`badge status-${r.status?.toLowerCase().replace(' ', '-')}`}>{r.status}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {/* Mobile Card List */}
+            <div className="mobile-only" style={{ padding: 16 }}>
+              {(data?.recent_activity || []).map((r, i) => (
+                <div key={i} className="mobile-card-item" style={{ marginBottom: 10 }}>
+                  <div className="card-list-row">
+                    <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--tata-blue)' }}>{r.full_name}</span>
+                    <span className={`badge status-${r.status?.toLowerCase().replace(' ', '-')}`}>{r.status}</span>
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--grey-400)', marginTop: 4 }}>
+                    {r.dealer_name}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>

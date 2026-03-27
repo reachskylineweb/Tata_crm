@@ -37,7 +37,7 @@ function AppRoutes() {
   }
 
   // Redirect root based on role
-  const defaultRoute = user.role === 'dealer' ? '/dealer-dashboard' : '/dashboard';
+  const defaultRoute = (user.role === 'dealer' || user.role === 'dse') ? '/dealer-dashboard' : '/dashboard';
 
   return (
     <Routes>
@@ -83,14 +83,20 @@ function AppRoutes() {
         } />
 
 
-        {/* Dealer Routes */}
+        {/* Dealer & DSE Routes */}
         <Route path="/dealer-dashboard" element={
-          <ProtectedRoute allowedRoles={['dealer']}>
+          <ProtectedRoute allowedRoles={['dealer', 'dse']}>
             <DealerDashboard />
           </ProtectedRoute>
         } />
+        <Route path="/dse-app" element={
+          <ProtectedRoute allowedRoles={['dse']}>
+            <DealerDashboard isPWA={true} />
+          </ProtectedRoute>
+        } />
+
         <Route path="/my-leads" element={
-          <ProtectedRoute allowedRoles={['dealer']}>
+          <ProtectedRoute allowedRoles={['dealer', 'dse']}>
             <DealerLeads />
           </ProtectedRoute>
         } />

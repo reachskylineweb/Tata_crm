@@ -80,6 +80,8 @@ async function setupDatabase() {
       voice_of_customer TEXT,
       consolidated_remark VARCHAR(500),
       status ENUM('In Progress','On Call','Completed') DEFAULT 'In Progress',
+      customer_appointment_date DATE,
+      customer_location VARCHAR(255),
       upload_batch_id INT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

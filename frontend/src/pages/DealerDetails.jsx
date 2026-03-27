@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   ChevronLeft, Search, Filter, Calendar,
   Phone, User, MessageSquare, Clock,
-  AlertCircle, TrendingUp, MoreVertical, X
+  AlertCircle, TrendingUp, MoreVertical, X, MapPin, Truck
 } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
@@ -16,7 +16,6 @@ export default function DealerDetails() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [priorityFilter, setPriorityFilter] = useState('');
   const [dateRange, setDateRange] = useState({ from: '', to: '' });
 
   const fetchDealerData = useCallback(async () => {
@@ -29,7 +28,6 @@ export default function DealerDetails() {
         dealer_id: id,
         search,
         status: statusFilter,
-        priority: priorityFilter,
         date_from: dateRange.from,
         date_to: dateRange.to,
         limit: 100
@@ -55,28 +53,22 @@ export default function DealerDetails() {
     });
   };
 
-  const priorityBadge = (p) => {
-    const colors = { Hot: 'red', Warm: 'yellow', Cold: 'blue' };
-    const color = colors[p] || 'grey';
-    return <span className={`badge badge-${color}`}>{p || 'Warm'}</span>;
-  };
-
   return (
     <div className="dealer-details-page">
-      <div className="page-header">
-        <div className="page-header-left">
-          <button className="btn btn-secondary btn-sm" onClick={() => navigate('/dealers')} style={{ marginBottom: 12, padding: '6px 10px' }}>
-            <ChevronLeft size={16} /> Back to Dealers
-          </button>
-          <h2>{dealer?.dealer_name || 'Dealer'} Leads</h2>
-          <p>Detailed performance and lead tracking for this partner</p>
+      <div className="page-header" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 12 }}>
+        <button className="btn btn-secondary btn-sm" onClick={() => navigate('/dealers')} style={{ padding: '6px 12px', borderRadius: 8 }}>
+          <ChevronLeft size={16} /> Back to Dealers
+        </button>
+        <div style={{ width: '100%' }}>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>{dealer?.dealer_name.replace(/\s*Dealer\s*Partner\s*/gi, '') || 'Dealer'} Leads</h2>
+          <p style={{ color: 'var(--grey-500)', fontSize: '0.85rem' }}>Global oversight of this partner's lead performance</p>
         </div>
       </div>
 
-      {/* Filters Row */}
-      <div className="card" style={{ marginBottom: 20 }}>
-        <div className="card-body" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <div className="search-bar" style={{ flex: '1 1 300px', maxWidth: 400 }}>
+      {/* Filters Row — Responsive */}
+      <div className="card" style={{ marginBottom: 20, borderRadius: 16 }}>
+        <div className="card-body" style={{ padding: '16px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div className="search-bar" style={{ flex: '1 1 280px' }}>
             <Search size={16} className="search-icon" />
             <input
               placeholder="Search by name, phone..."
@@ -85,88 +77,145 @@ export default function DealerDetails() {
             />
           </div>
 
-          <select className="form-select" style={{ width: 150 }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+          <select 
+            className="form-select" 
+            style={{ flex: '1 1 150px', background: 'var(--grey-50)', height: 42, borderRadius: 10 }} 
+            value={statusFilter} 
+            onChange={e => setStatusFilter(e.target.value)}
+          >
             <option value="">All Status</option>
-            <option value="New">New</option>
             <option value="In Progress">In Progress</option>
             <option value="On Call">On Call</option>
             <option value="Completed">Completed</option>
           </select>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--white)', padding: '0 12px', borderRadius: 8, border: '1px solid var(--grey-200)', height: 42 }}>
+          <div style={{ 
+            display: 'flex', alignItems: 'center', gap: 8, background: 'var(--grey-50)', 
+            padding: '0 12px', borderRadius: 10, border: '1px solid var(--grey-200)', 
+            height: 42, flex: '1 1 280px', flexWrap: 'wrap'
+          }}>
             <Calendar size={14} color="var(--grey-400)" />
-            <input type="date" className="form-control" style={{ width: 130, border: 'none', background: 'transparent', fontSize: '0.82rem' }} value={dateRange.from} onChange={e => setDateRange(prev => ({ ...prev, from: e.target.value }))} />
+            <input type="date" className="form-control" style={{ flex: 1, border: 'none', background: 'transparent', fontSize: '0.82rem', height: 38, minHeight: 'auto' }} value={dateRange.from} onChange={e => setDateRange(prev => ({ ...prev, from: e.target.value }))} />
             <span style={{ color: 'var(--grey-300)' }}>-</span>
-            <input type="date" className="form-control" style={{ width: 130, border: 'none', background: 'transparent', fontSize: '0.82rem' }} value={dateRange.to} onChange={e => setDateRange(prev => ({ ...prev, to: e.target.value }))} />
+            <input type="date" className="form-control" style={{ flex: 1, border: 'none', background: 'transparent', fontSize: '0.82rem', height: 38, minHeight: 'auto' }} value={dateRange.to} onChange={e => setDateRange(prev => ({ ...prev, to: e.target.value }))} />
           </div>
 
-          <button className="btn btn-primary" onClick={fetchDealerData}>Apply</button>
+          <button className="btn btn-primary" style={{ padding: '0 24px', height: 42, borderRadius: 10 }} onClick={fetchDealerData}>Apply</button>
         </div>
       </div>
 
-      <div className="table-wrapper">
+      {/* Desktop Table View */}
+      <div className="table-wrapper dealers-desktop-table" style={{ borderRadius: 16, border: '1px solid var(--grey-100)' }}>
         {loading ? (
-          <div className="loading-overlay"><div className="spinner" /></div>
+          <div className="loading-overlay" style={{ background: 'rgba(255,255,255,0.7)' }}><div className="spinner" /></div>
         ) : leads.length === 0 ? (
-          <div className="empty-state">
+          <div className="empty-state" style={{ padding: 60 }}>
             <div className="empty-state-icon"><User size={32} /></div>
             <h3>No Leads Found</h3>
-            <p>No leads match your current filter criteria for this dealer.</p>
+            <p>No leads match your criteria for this dealer.</p>
           </div>
         ) : (
           <table className="data-table">
             <thead>
-              <tr>
-                <th>Lead ID</th>
+              <tr style={{ background: 'var(--grey-50)' }}>
+                <th style={{ paddingLeft: 20 }}>Assigned Date</th>
                 <th>Customer Name</th>
-                <th>Phone Number</th>
-                <th>Status</th>
-                <th>Next Follow-up</th>
-                <th>Last Contacted</th>
-                <th>Remarks</th>
+                <th>Contact info</th>
+                <th>Current Status</th>
+                <th>Follow-up</th>
+                <th>Last Update</th>
+                <th style={{ paddingRight: 20 }}>DSE Remarks</th>
               </tr>
             </thead>
             <tbody>
               {leads.map(l => (
-                <tr key={l.id} className={l.follow_up_date && new Date(l.follow_up_date) < new Date() && l.status !== 'Completed' ? 'overdue-row' : ''} style={{
-                  background: l.follow_up_date && new Date(l.follow_up_date) < new Date() && l.status !== 'Completed' ? 'rgba(240, 68, 56, 0.03)' : 'inherit'
-                }}>
-                  <td style={{ fontWeight: 600, color: 'var(--grey-400)', fontSize: '0.75rem' }}>#{l.id}</td>
-                  <td style={{ fontWeight: 700, color: 'var(--tata-blue)' }}>{l.full_name}</td>
+                <tr key={l.id}>
+                  <td style={{ paddingLeft: 20, fontWeight: 700, color: 'var(--grey-600)', fontSize: '0.85rem' }}>{formatDate(l.lead_date)}</td>
+                  <td style={{ fontWeight: 800, color: 'var(--tata-blue)', fontSize: '0.9rem' }}>{l.full_name}</td>
                   <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <Phone size={12} color="var(--grey-400)" />
-                      <a href={`tel:${l.phone_number}`} style={{ fontWeight: 500 }}>{l.phone_number}</a>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <a href={`tel:${l.phone_number}`} style={{ fontWeight: 600, color: 'var(--green-500)', fontSize: '0.85rem' }}>{l.phone_number}</a>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--grey-400)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <MapPin size={10} /> {l.location}
+                      </span>
                     </div>
                   </td>
                   <td>
-                    <span className={`badge status-${l.status?.toLowerCase().replace(/ /g, '-')}`}>
+                    <span className={`badge status-${l.status?.toLowerCase().replace(/ /g, '-')}`} style={{ fontWeight: 700 }}>
                       {l.status}
                     </span>
                   </td>
                   <td>
-                    {l.follow_up_date && new Date(l.follow_up_date).toLocaleDateString('en-CA') > new Date().toLocaleDateString('en-CA') ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <Clock size={12} />
-                        <span style={{ fontWeight: 500 }}>{formatDate(l.follow_up_date)}</span>
+                    {l.follow_up_date ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '0.8rem', color: 'var(--grey-700)', fontWeight: 600 }}>
+                        <Clock size={12} color="var(--orange-500)" />
+                        {formatDate(l.follow_up_date)}
                       </div>
-                    ) : (
-                      <span style={{ color: 'var(--grey-300)' }}>—</span>
-                    )}
+                    ) : <span style={{ color: 'var(--grey-300)' }}>—</span>}
                   </td>
-                  <td>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--grey-500)' }}>{formatDate(l.last_contacted_date)}</span>
-                  </td>
-                  <td style={{ maxWidth: 200 }}>
-                    <div style={{ fontSize: '0.8rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={l.consolidated_remark}>
-                      {l.consolidated_remark || '—'}
-                    </div>
+                  <td style={{ fontSize: '0.8rem', color: 'var(--grey-500)' }}>{formatDate(l.updated_at)}</td>
+                  <td style={{ paddingRight: 20, maxWidth: 220 }}>
+                     <div style={{ fontSize: '0.8rem', color: 'var(--grey-700)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={l.consolidated_remark || l.voice_of_customer}>
+                        {l.consolidated_remark || l.voice_of_customer || '—'}
+                     </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
+      </div>
+
+      {/* Mobile Card View */}
+      <div className="dealers-mobile-cards">
+        {loading ? (
+          <div style={{ padding: 40, textAlign: 'center' }}><div className="spinner" /></div>
+        ) : leads.map((l) => (
+          <div key={l.id} style={{
+            background: '#fff', borderRadius: 14, border: '1px solid var(--grey-100)',
+            boxShadow: 'var(--shadow-xs)', padding: 14, marginBottom: 10
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 800, color: 'var(--tata-blue)', fontSize: '0.95rem' }}>{l.full_name}</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--grey-500)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <MapPin size={10} /> {l.location}
+                </div>
+              </div>
+              <span className={`badge status-${l.status?.toLowerCase().replace(/ /g, '-')}`} style={{ flexShrink: 0 }}>
+                {l.status}
+              </span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+              <div style={{ background: 'var(--grey-50)', padding: '6px 10px', borderRadius: 8 }}>
+                <div style={{ fontSize: '0.65rem', color: 'var(--grey-400)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 2 }}>Phone</div>
+                <a href={`tel:${l.phone_number}`} style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--green-500)' }}>{l.phone_number}</a>
+              </div>
+              <div style={{ background: 'var(--grey-50)', padding: '6px 10px', borderRadius: 8 }}>
+                <div style={{ fontSize: '0.65rem', color: 'var(--grey-400)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 2 }}>Lead Date</div>
+                <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--grey-800)' }}>{formatDate(l.lead_date)}</div>
+              </div>
+            </div>
+
+            {l.follow_up_date && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, padding: '6px 0', borderTop: '1px dashed var(--grey-200)' }}>
+                <Clock size={12} color="var(--orange-500)" />
+                <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--grey-600)' }}>Next Follow-up: </span>
+                <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--orange-500)' }}>{formatDate(l.follow_up_date)}</span>
+              </div>
+            )}
+
+            {(l.consolidated_remark || l.voice_of_customer) && (
+              <div style={{ background: 'rgba(0,58,143,0.03)', padding: 10, borderRadius: 10, border: '1px solid rgba(0,58,143,0.08)' }}>
+                <div style={{ fontSize: '0.65rem', color: 'var(--tata-blue)', fontWeight: 800, textTransform: 'uppercase', marginBottom: 4 }}>Latest Remark</div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--grey-700)', fontWeight: 500, lineHeight: 1.4 }}>
+                  {l.consolidated_remark || l.voice_of_customer}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );

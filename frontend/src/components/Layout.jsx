@@ -1,10 +1,11 @@
-import React from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard, Upload, Database, Building2, BarChart3,
-  Settings, LogOut, TrendingUp, FileSpreadsheet, ChevronDown
+  Settings, LogOut, TrendingUp, FileSpreadsheet, Menu, X
 } from 'lucide-react';
+import InstallPWA from './InstallPWA';
 
 const adminNav = [
   { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
@@ -21,12 +22,72 @@ const dealerNav = [
 ];
 
 export default function Layout() {
-  const { user, logout, isDealer } = useAuth();
+  const { user, logout, isDealer, isDSE } = useAuth();
   const navigate = useNavigate();
-  const navItems = isDealer ? dealerNav : adminNav.filter(item => {
+  const location = useLocation();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const navItems = (isDealer || isDSE) ? dealerNav : adminNav.filter(item => {
     if (item.label === 'Upload Leads' && user?.role === 'admin') return false;
     return true;
   });
+
+  // 1. PWA Role-Based Registration (ONLY for DSE)
+  useEffect(() => {
+    if (user?.role !== 'dse') return;
+
+    // Dynamic Manifest Injection
+    const manifestLink = document.createElement('link');
+    manifestLink.rel = 'manifest';
+    manifestLink.href = '/manifest.json';
+    manifestLink.id = 'pwa-manifest';
+    if (!document.getElementById('pwa-manifest')) {
+      document.head.appendChild(manifestLink);
+    }
+
+    // Dynamic Service Worker Registration
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js')
+        .then(reg => console.log('DSE Service Worker: Active', reg.scope))
+        .catch(err => console.warn('PWA Registration Failed', err));
+    }
+
+    return () => {
+      const existing = document.getElementById('pwa-manifest');
+      if (existing) document.head.removeChild(existing);
+    };
+  }, [user]);
+
+  // Close sidebar on route change (mobile)
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [location.pathname]);
+
+  // Close sidebar on outside click (mobile)
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const handler = (e) => {
+      if (!e.target.closest('.sidebar') && !e.target.closest('.hamburger-btn')) {
+        setSidebarOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    document.addEventListener('touchstart', handler);
+    return () => {
+      document.removeEventListener('mousedown', handler);
+      document.removeEventListener('touchstart', handler);
+    };
+  }, [sidebarOpen]);
+
+  // Prevent body scroll when mobile sidebar open
+  useEffect(() => {
+    if (sidebarOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [sidebarOpen]);
 
   const handleLogout = () => {
     logout();
@@ -36,24 +97,44 @@ export default function Layout() {
   const initials = (user?.full_name || user?.username || 'U')
     .split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase();
 
-  const roleLabel = { admin: 'Administrator', campaign_team: 'Campaign Manager', dealer: 'Telecaller' };
+  const roleLabel = {
+    admin: 'Administrator',
+    campaign_team: 'Campaign Manager',
+    dealer: 'Telecaller',
+    dse: 'Sales Executive'
+  };
 
   return (
     <div className="app-container">
+      {/* Mobile Overlay */}
+      {sidebarOpen && (
+        <div
+          className="sidebar-overlay"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className="sidebar">
+      <aside className={`sidebar${sidebarOpen ? ' sidebar-open' : ''}`}>
         {/* Logo */}
         <div className="sidebar-logo">
-          <div style={{
-            width: 40, height: 40, borderRadius: 10,
-            background: 'rgba(255,255,255,0.15)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '1.1rem', fontWeight: 900, color: '#fff', flexShrink: 0
-          }}>T</div>
-          <div className="sidebar-logo-text">
-            <span className="brand">TATA MOTORS</span>
-            <span className="title">CRM Portal</span>
+          <img
+            src="https://upload.wikimedia.org/wikipedia/commons/8/8e/Tata_logo.svg"
+            alt="Tata Motors"
+            style={{ height: '32px', filter: 'brightness(0) invert(1)' }}
+          />
+          <div className="sidebar-logo-text" style={{ borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: '12px' }}>
+            <span className="brand" style={{ fontSize: '1rem', letterSpacing: '1px' }}>CRM</span>
+            <span className="title" style={{ fontSize: '0.65rem', opacity: 0.7 }}>PORTAL</span>
           </div>
+          <button
+            className="sidebar-close-btn"
+            onClick={() => setSidebarOpen(false)}
+            aria-label="Close menu"
+          >
+            <X size={20} />
+          </button>
         </div>
 
         {/* Navigation */}
@@ -87,37 +168,48 @@ export default function Layout() {
         </div>
       </aside>
 
-      {/* Main */}
+      {/* Main Container */}
       <div className="main-layout">
-        {/* Header */}
         <header className="main-header">
           <div className="header-left">
-            <div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--grey-400)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.8px' }}>
-                Tata Motors
-              </div>
-              <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--grey-900)' }}>
-                CRM Portal
+            <button
+              className="hamburger-btn"
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Open menu"
+            >
+              <Menu size={22} />
+            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <img
+                src="https://upload.wikimedia.org/wikipedia/commons/8/8e/Tata_logo.svg"
+                alt="Tata"
+                className="header-logo"
+              />
+              <div style={{ width: '1px', height: '20px', background: 'var(--grey-200)' }} />
+              <div>
+                <div style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--grey-900)' }}>CRM Portal</div>
+                <div className="header-subtitle">Advertisement Lead Management</div>
               </div>
             </div>
           </div>
           <div className="header-right">
             <div className="user-info">
               <div className="user-avatar">{initials}</div>
-              <div>
+              <div className="user-info-text">
                 <div className="user-name">{user?.full_name}</div>
                 <div className="user-role">{roleLabel[user?.role]}</div>
               </div>
-              <ChevronDown size={14} color="var(--grey-400)" />
             </div>
           </div>
         </header>
 
-        {/* Content */}
         <main className="page-content">
           <Outlet />
         </main>
       </div>
+
+      {/* DSE-only Install UI */}
+      {user?.role === 'dse' && <InstallPWA />}
     </div>
   );
 }

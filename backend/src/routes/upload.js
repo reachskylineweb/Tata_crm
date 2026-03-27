@@ -55,37 +55,93 @@ function normalizeDistrict(district) {
   return district.toString().toLowerCase().trim().replace(/\s+/g, '_');
 }
 
-// Date adjustment logic: all dates older than upload_date-1 → upload_date-1
-function adjustLeadDate(leadDate, uploadDate) {
-  if (!leadDate) return uploadDate;
-  
-  let ld;
-  if (leadDate instanceof Date) {
-    ld = new Date(leadDate);
-  } else if (typeof leadDate === 'number') {
-    // Excel serial date
-    ld = XLSX.SSF.parse_date_code(leadDate);
-    ld = new Date(ld.y, ld.m - 1, ld.d);
+// ─────────────────────────────────────────────────────────────────
+// TATA MOTORS: Task Assigning Rule (Refined 2026-03-24)
+//
+// Rules:
+//  1. For Tue, Wed, Thu, Fri (and Sat/Sun):
+//       - Find the latest date (max) among all leads in the uploaded sheet.
+//       - Assign ALL leads in that batch to that latest date.
+//  2. For Monday:
+//       - Keep the original date from the lead sheet for each lead (Saturday/Sunday leads).
+//       - Do not change or consolidate the dates.
+// ─────────────────────────────────────────────────────────────────
+
+/** Parse any date-like value into a YYYY-MM-DD string (UTC-safe), or null */
+function parseToYMD(val) {
+  if (!val) return null;
+
+  let ymd = null;
+
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) return null;
+    // Extract local parts directly to avoid UTC shift
+    const y = val.getFullYear();
+    const m = String(val.getMonth() + 1).padStart(2, '0');
+    const d = String(val.getDate()).padStart(2, '0');
+    ymd = `${y}-${m}-${d}`;
+  } else if (typeof val === 'number') {
+    // Excel serial date (days since 1900-01-01)
+    try {
+      const parsed = XLSX.SSF.parse_date_code(val);      // { y, m, d, ... }
+      const m = String(parsed.m).padStart(2, '0');
+      const d = String(parsed.d).padStart(2, '0');
+      ymd = `${parsed.y}-${m}-${d}`;
+    } catch { return null; }
   } else {
-    // Try parse string
-    ld = new Date(leadDate);
+    // String – grab the date portion only, ignore time
+    const s = String(val).trim();
+    const m = s.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (m) { ymd = `${m[1]}-${m[2]}-${m[3]}`; }
+    else {
+      const d = new Date(s);
+      if (isNaN(d.getTime())) return null;
+      // Extract local parts directly to avoid UTC shift
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      ymd = `${year}-${month}-${day}`;
+    }
   }
 
-  if (isNaN(ld.getTime())) return uploadDate;
+  return ymd;                                             // YYYY-MM-DD
+}
 
-  // "previous day" relative to upload date
-  const prevDay = new Date(uploadDate);
-  prevDay.setDate(prevDay.getDate() - 1);
+/** Add `n` days to a YYYY-MM-DD string, return YYYY-MM-DD (UTC) */
+function addDays(ymd, n) {
+  const d = new Date(ymd + 'T00:00:00Z');               // UTC midnight
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().split('T')[0];
+}
 
-  // If lead date is before or equal to prev day → set to prev day
-  if (ld <= prevDay) {
-    return prevDay.toISOString().split('T')[0];
+/** Day-of-week for a YYYY-MM-DD string (0=Sun … 6=Sat, UTC) */
+function dowOf(ymd) {
+  return new Date(ymd + 'T00:00:00Z').getUTCDay();
+}
+
+function adjustLeadDate(rawLeadDate, uploadDateStr, maxLeadDateInBatch) {
+  // uploadDateStr = today's date as YYYY-MM-DD
+  const today = uploadDateStr;
+  const dow = dowOf(today);
+
+  // ── MONDAY RULE ─────────────────────────────────────────────
+  // Keep original date from sheet (no changes)
+  if (dow === 1) {
+    const parsed = parseToYMD(rawLeadDate);
+    if (parsed) return parsed;
+    
+    // Fallback if no date in row: use Saturday (2 days before Monday)
+    return addDays(today, -2);
   }
-  // If lead date is upload day or future → prev day
-  if (ld >= new Date(uploadDate)) {
-    return prevDay.toISOString().split('T')[0];
+
+  // ── TUE, WED, THU, FRI (Latest Date Rule) ───────────────────
+  // Use the maximum date found in the entire sheet
+  if (maxLeadDateInBatch) {
+    return maxLeadDateInBatch;
   }
-  return ld.toISOString().split('T')[0];
+
+  // Final fallback: Yesterday
+  return addDays(today, -1);
 }
 
 // Find dealer by district
@@ -120,7 +176,8 @@ router.post('/leads', authenticate, authorize('admin', 'campaign_team'), upload.
     return res.status(400).json({ success: false, message: 'No file uploaded' });
   }
 
-  const uploadDate = new Date().toISOString().split('T')[0];
+  const now = new Date();
+  const uploadDate = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
   let batchId;
 
   try {
@@ -184,6 +241,21 @@ router.post('/leads', authenticate, authorize('admin', 'campaign_team'), upload.
     let createdTimeIdx = headers.findIndex(h => h.includes('created_time'));
 
     const dataRows = rawData.slice(1);
+
+    // ── PRE-SCAN: Find the latest date (max) in the batch for Tue-Fri rule ──
+    let maxLeadDateInBatch = null;
+    if (createdTimeIdx >= 0) {
+      for (const row of dataRows) {
+        if (!row || row.every(cell => cell === '' || cell === null || cell === undefined)) continue;
+        const parsedYMD = parseToYMD(row[createdTimeIdx]);
+        if (parsedYMD) {
+          if (!maxLeadDateInBatch || parsedYMD > maxLeadDateInBatch) {
+            maxLeadDateInBatch = parsedYMD;
+          }
+        }
+      }
+    }
+
     let processedCount = 0;
     const errors = [];
     const insertedLeads = [];
@@ -205,7 +277,7 @@ router.post('/leads', authenticate, authorize('admin', 'campaign_team'), upload.
 
         // Date from created_time column or use adjustDate
         let rawDate = createdTimeIdx >= 0 ? row[createdTimeIdx] : null;
-        const adjustedDate = adjustLeadDate(rawDate, uploadDate);
+        const adjustedDate = adjustLeadDate(rawDate, uploadDate, maxLeadDateInBatch);
 
         // Find dealer
         const dealer = await findDealerByDistrict(location);

@@ -6,21 +6,38 @@ const router = express.Router();
 // GET /api/dashboard/admin - Full admin dashboard analytics
 router.get('/admin', authenticate, authorize('admin', 'campaign_team'), async (req, res) => {
   try {
+    const { date_from, date_to } = req.query;
+    let baseWhere = '1=1';
+    let params = [];
+
+    if (date_from && date_to) {
+      baseWhere = 'lead_date BETWEEN ? AND ?';
+      params.push(date_from, date_to);
+    }
+
     // Total leads
     const [[totals]] = await db.query(`
       SELECT 
         COUNT(*) as total_leads,
         COUNT(CASE WHEN status='Completed' THEN 1 END) as completed,
-        COUNT(CASE WHEN status='In Progress' THEN 1 END) as in_progress,
-        COUNT(CASE WHEN status='On Call' THEN 1 END) as on_call,
-        COUNT(CASE WHEN follow_up_date IS NOT NULL AND status != 'Completed' THEN 1 END) as pending_followups
+        COUNT(CASE WHEN status='In Progress' THEN 1 END) as pending_leads,
+        (SELECT COUNT(*) FROM leads WHERE follow_up_date IS NOT NULL AND follow_up_date >= CURDATE() AND status != 'Completed') as pending_followups
       FROM leads
-    `);
+      WHERE ${baseWhere}
+    `, params);
 
     // Status distribution for pie chart
     const [statusDist] = await db.query(`
-      SELECT status, COUNT(*) as count FROM leads GROUP BY status
-    `);
+      SELECT status, COUNT(*) as count FROM leads WHERE ${baseWhere} GROUP BY status
+    `, params);
+
+    // Remark distribution (Telecaller Remarks)
+    const [remarkDist] = await db.query(`
+      SELECT voice_of_customer as status, COUNT(*) as count 
+      FROM leads 
+      WHERE ${baseWhere} AND voice_of_customer IS NOT NULL AND voice_of_customer != ''
+      GROUP BY voice_of_customer
+    `, params);
 
     // Dealer performance
     const [dealerPerf] = await db.query(`
@@ -31,32 +48,45 @@ router.get('/admin', authenticate, authorize('admin', 'campaign_team'), async (r
         COUNT(CASE WHEN l.follow_up_date IS NOT NULL AND l.follow_up_date <= CURDATE() AND l.status != 'Completed' THEN 1 END) as pending,
         ROUND(COUNT(CASE WHEN l.status='Completed' THEN 1 END) * 100.0 / NULLIF(COUNT(l.id), 0), 1) as conversion_rate
       FROM dealers d
-      LEFT JOIN leads l ON d.id = l.dealer_id
+      LEFT JOIN leads l ON d.id = l.dealer_id AND (l.lead_date BETWEEN ? AND ?)
       WHERE d.dealer_name != 'Others'
       GROUP BY d.id, d.dealer_name
       ORDER BY total_leads DESC
-    `);
+    `, [date_from || '2000-01-01', date_to || '2099-12-31']);
 
-    // Daily leads trend (last 30 days)
+    // Daily leads trend (last 30 days or selected range)
+    let trendWhere = baseWhere;
+    let trendParams = [...params];
+    if (!date_from || !date_to) {
+      trendWhere = 'lead_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)';
+      trendParams = [];
+    }
+
     const [dailyTrend] = await db.query(`
       SELECT 
         DATE_FORMAT(lead_date, '%d %b') as date_label,
         lead_date,
         COUNT(*) as count
       FROM leads 
-      WHERE lead_date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+      WHERE ${trendWhere}
       GROUP BY lead_date
       ORDER BY lead_date ASC
-    `);
+    `, trendParams);
 
     // Model distribution
     const [modelDist] = await db.query(`
       SELECT model, COUNT(*) as count FROM leads 
-      WHERE model IS NOT NULL AND model != ''
+      WHERE ${baseWhere} AND model IS NOT NULL AND model != ''
       GROUP BY model ORDER BY count DESC LIMIT 10
-    `);
+    `, params);
 
-    // Campaign metrics (last 30 days)
+    // Campaign metrics
+    let campaignWhere = '1=1';
+    let campaignParams = [];
+    if (date_from && date_to) {
+      campaignWhere = 'metric_date BETWEEN ? AND ?';
+      campaignParams.push(date_from, date_to);
+    }
     const [campaignMetrics] = await db.query(`
       SELECT 
         metric_date, 
@@ -64,19 +94,20 @@ router.get('/admin', authenticate, authorize('admin', 'campaign_team'), async (r
         total_leads, 
         ad_spend
       FROM campaign_metrics 
+      WHERE ${campaignWhere}
       ORDER BY metric_date DESC 
       LIMIT 30
-    `);
+    `, campaignParams);
 
     // Recent activity
     const [recentLeads] = await db.query(`
       SELECT l.id, l.full_name, l.location, l.model, l.status, l.updated_at, d.dealer_name
       FROM leads l
       LEFT JOIN dealers d ON l.dealer_id = d.id
-      WHERE l.updated_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+      WHERE ${baseWhere}
       ORDER BY l.updated_at DESC
       LIMIT 10
-    `);
+    `, params);
 
     // Conversion rate
     const conversionRate = totals.total_leads > 0
@@ -93,6 +124,7 @@ router.get('/admin', authenticate, authorize('admin', 'campaign_team'), async (r
           conversion_rate: conversionRate
         },
         status_distribution: statusDist,
+        remark_distribution: remarkDist,
         dealer_performance: dealerPerf,
         daily_trend: dailyTrend,
         model_distribution: modelDist,
@@ -107,49 +139,79 @@ router.get('/admin', authenticate, authorize('admin', 'campaign_team'), async (r
 });
 
 // GET /api/dashboard/dealer - Dealer/telecaller dashboard
-router.get('/dealer', authenticate, authorize('dealer'), async (req, res) => {
+router.get('/dealer', authenticate, authorize('dealer', 'dse'), async (req, res) => {
   try {
-    const dealerId = req.user.dealer_id;
+    const { date_from, date_to } = req.query;
+    let baseWhere = '1=1';
+    let params = [];
 
+    if (req.user.role === 'dealer') {
+      baseWhere = 'dealer_id = ?';
+      params.push(req.user.dealer_id);
+    } else if (req.user.role === 'dse') {
+      baseWhere = 'assigned_to_dse = ?';
+      params.push(req.user.full_name);
+    }
+
+    // Date filtering if provided
+    let dateWhere = baseWhere;
+    let dateParams = [...params];
+    if (date_from && date_to) {
+      dateWhere += ' AND lead_date BETWEEN ? AND ?';
+      dateParams.push(date_from, date_to);
+    }
+
+    const summaryParams = [
+      date_from || '2000-01-01', date_to || '2099-12-31',
+      ...dateParams
+    ];
     const [[summary]] = await db.query(`
       SELECT 
         COUNT(*) as total_leads,
-        COUNT(CASE WHEN status='In Progress' THEN 1 END) as in_progress,
-        COUNT(CASE WHEN status='On Call' THEN 1 END) as on_call,
+        COUNT(CASE WHEN status='In Progress' THEN 1 END) as pending_leads,
         COUNT(CASE WHEN status='Completed' THEN 1 END) as completed,
-        COUNT(CASE WHEN follow_up_date = CURDATE() THEN 1 END) as followups_today,
-        COUNT(CASE WHEN follow_up_date < CURDATE() AND status != 'Completed' THEN 1 END) as overdue_followups
-      FROM leads WHERE dealer_id = ?
-    `, [dealerId]);
+        COUNT(CASE WHEN status != 'Completed' AND follow_up_date BETWEEN ? AND ? THEN 1 END) as total_followups
+      FROM (SELECT * FROM leads WHERE ${dateWhere}) as sub`, summaryParams);
 
     // Status distribution
     const [statusDist] = await db.query(`
-      SELECT status, COUNT(*) as count FROM leads WHERE dealer_id = ? GROUP BY status
-    `, [dealerId]);
+      SELECT status, COUNT(*) as count FROM leads WHERE ${dateWhere} GROUP BY status
+    `, dateParams);
 
-    // Today's follow-ups
-    const [todayFollowups] = await db.query(`
-      SELECT id, full_name, phone_number, model, location, follow_up_date, status, voice_of_customer
+    // Remark distribution (Telecaller Remarks)
+    const [remarkDist] = await db.query(`
+      SELECT voice_of_customer as name, COUNT(*) as value 
       FROM leads 
-      WHERE dealer_id = ? AND follow_up_date = CURDATE() AND status != 'Completed'
-      ORDER BY follow_up_date ASC
-      LIMIT 10
-    `, [dealerId]);
+      WHERE ${dateWhere} AND voice_of_customer IS NOT NULL AND voice_of_customer != ''
+      GROUP BY voice_of_customer
+    `, dateParams);
 
-    // Model distribution for this dealer
-    const [modelDist] = await db.query(`
-      SELECT model, COUNT(*) as count FROM leads 
-      WHERE dealer_id = ? AND model IS NOT NULL AND model != ''
-      GROUP BY model ORDER BY count DESC LIMIT 8
-    `, [dealerId]);
-
-    // Recent activity
-    const [recentActivity] = await db.query(`
-      SELECT id, full_name, status, lead_date, updated_at, voice_of_customer
+    // Deal Stage distribution
+    const [stageDist] = await db.query(`
+      SELECT deal_stage as name, COUNT(*) as value 
       FROM leads 
-      WHERE dealer_id = ? AND updated_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
-      ORDER BY updated_at DESC LIMIT 5
-    `, [dealerId]);
+      WHERE ${dateWhere} AND deal_stage IS NOT NULL AND deal_stage != ''
+      GROUP BY deal_stage
+    `, dateParams);
+
+    // If dealer, get distribution per DSE
+    let dseStageDist = [];
+    if (req.user.role === 'dealer') {
+      const [dseDist] = await db.query(`
+        SELECT assigned_to_dse as dse_name, deal_stage as stage, COUNT(*) as count
+        FROM leads
+        WHERE ${dateWhere} AND assigned_to_dse IS NOT NULL AND assigned_to_dse != '' AND deal_stage IS NOT NULL AND deal_stage != ''
+        GROUP BY assigned_to_dse, deal_stage
+      `, dateParams);
+      
+      // Transform to grouped format: { Ramesh: [{ name: 'Visited', value: 5 }, ...], ... }
+      const grouped = dseDist.reduce((acc, curr) => {
+        if (!acc[curr.dse_name]) acc[curr.dse_name] = [];
+        acc[curr.dse_name].push({ name: curr.stage, value: curr.count });
+        return acc;
+      }, {});
+      dseStageDist = Object.entries(grouped).map(([name, dist]) => ({ dse_name: name, distribution: dist }));
+    }
 
     const conversionRate = summary.total_leads > 0
       ? Math.round((summary.completed / summary.total_leads) * 100)
@@ -160,9 +222,9 @@ router.get('/dealer', authenticate, authorize('dealer'), async (req, res) => {
       data: {
         summary: { ...summary, conversion_rate: conversionRate },
         status_distribution: statusDist,
-        todays_followups: todayFollowups,
-        model_distribution: modelDist,
-        recent_activity: recentActivity
+        remark_distribution: remarkDist,
+        deal_stage_distribution: stageDist,
+        dse_stage_distribution: dseStageDist
       }
     });
   } catch (err) {

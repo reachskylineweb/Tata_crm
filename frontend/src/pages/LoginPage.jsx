@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
-import { Lock, User, Eye, EyeOff, Car } from 'lucide-react';
+import { Lock, User, Eye, EyeOff } from 'lucide-react';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -21,7 +21,7 @@ export default function LoginPage() {
     try {
       const user = await login(form.username, form.password);
       toast.success(`Welcome, ${user.full_name}!`);
-      if (user.role === 'dealer') {
+      if (user.role === 'dealer' || user.role === 'dse') {
         navigate('/dealer-dashboard');
       } else {
         navigate('/dashboard');
@@ -43,19 +43,21 @@ export default function LoginPage() {
       }} />
 
       <div className="login-card" style={{ position: 'relative', zIndex: 1 }}>
-        <div className="login-logo">
-          <div className="login-logo-icon">
-            <Car size={32} color="white" />
-          </div>
-          <h1>TATA MOTORS</h1>
-          <p>CRM — Advertisement Lead Management</p>
+        <div className="login-logo" style={{ textAlign: 'center', marginBottom: 32 }}>
+          <img 
+            src="https://upload.wikimedia.org/wikipedia/commons/8/8e/Tata_logo.svg" 
+            alt="Tata Motors" 
+            style={{ height: '70px', marginBottom: 12 }} 
+          />
+          <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--grey-900)', letterSpacing: '2px' }}>CRM PORTAL</div>
+          <p style={{ marginTop: 4, color: 'var(--grey-500)', fontSize: '0.82rem' }}>Advertisement Lead Management</p>
         </div>
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label className="form-label">Username</label>
             <div className="search-bar" style={{ padding: '10px 14px' }}>
-              <User size={16} className="search-icon" />
+              <User size={16} className="search-icon" style={{ color: 'var(--tata-blue)' }} />
               <input
                 type="text"
                 placeholder="Enter your username"
@@ -69,7 +71,7 @@ export default function LoginPage() {
           <div className="form-group">
             <label className="form-label">Password</label>
             <div className="search-bar" style={{ padding: '10px 14px' }}>
-              <Lock size={16} className="search-icon" />
+              <Lock size={16} className="search-icon" style={{ color: 'var(--tata-blue)' }} />
               <input
                 type={showPass ? 'text' : 'password'}
                 placeholder="Enter your password"

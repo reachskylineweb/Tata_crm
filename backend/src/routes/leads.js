@@ -1,7 +1,33 @@
 const express = require('express');
 const db = require('../config/database');
 const { authenticate, authorize } = require('../middleware/auth');
+const path = require('path');
+const multer = require('multer');
+const fs = require('fs');
 const router = express.Router();
+
+// MULTER SETUP FOR PHOTO UPLOADS
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = path.join(__dirname, '../../uploads/jio-tags');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    cb(null, `jio_${req.params.id}_${Date.now()}${path.extname(file.originalname)}`);
+  }
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: (req, file, cb) => {
+    const allowed = ['.jpg', '.jpeg', '.png'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowed.includes(ext)) cb(null, true);
+    else cb(new Error('Invalid format: only JPG/PNG are allowed'));
+  }
+});
 
 // GET /api/leads - Get leads (filtered by role)
 router.get('/', authenticate, async (req, res) => {
@@ -16,6 +42,10 @@ router.get('/', authenticate, async (req, res) => {
     if (req.user.role === 'dealer') {
       where.push('l.dealer_id = ?');
       params.push(req.user.dealer_id);
+    } else if (req.user.role === 'dse') {
+      // DSE only see leads assigned to them
+      where.push('l.assigned_to_dse = ?');
+      params.push(req.user.full_name);
     } else if (dealer_id) {
       where.push('l.dealer_id = ?');
       params.push(dealer_id);
@@ -92,8 +122,11 @@ router.get('/:id', authenticate, async (req, res) => {
     );
     if (rows.length === 0) return res.status(404).json({ success: false, message: 'Lead not found' });
 
-    // Dealers can only view their own leads
+    // Permissions
     if (req.user.role === 'dealer' && rows[0].dealer_id !== req.user.dealer_id) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+    if (req.user.role === 'dse' && rows[0].assigned_to_dse !== req.user.full_name) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
@@ -103,15 +136,14 @@ router.get('/:id', authenticate, async (req, res) => {
   }
 });
 
-// PUT /api/leads/:id - Update lead (dealers can update follow-up, voc, remarks, status)
-router.put('/:id', authenticate, async (req, res) => {
+// PUT /api/leads/:id - Update lead
+router.put('/:id', authenticate, upload.single('jio_tag_photo'), async (req, res) => {
   try {
-    const { follow_up_date, voice_of_customer, consolidated_remark, status } = req.body;
-
-    // Validate: completed requires consolidated_remark
-    if (status === 'Completed' && !consolidated_remark) {
-      return res.status(400).json({ success: false, message: 'Consolidated remarks are required when status is Completed' });
-    }
+    const { 
+      follow_up_date, voice_of_customer, consolidated_remark, status, assigned_to_dse,
+      visit_status, interest_level, deal_stage, expected_purchase_timeline, budget, dse_notes, lost_reason,
+      customer_appointment_date, customer_location
+    } = req.body;
 
     // Check lead exists and permission
     const [rows] = await db.query('SELECT * FROM leads WHERE id = ?', [req.params.id]);
@@ -120,27 +152,73 @@ router.put('/:id', authenticate, async (req, res) => {
     if (req.user.role === 'dealer' && rows[0].dealer_id !== req.user.dealer_id) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
+    if (req.user.role === 'dse' && rows[0].assigned_to_dse !== req.user.full_name) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
 
     const updateFields = {};
     if (follow_up_date !== undefined) {
       const today = new Date().toISOString().split('T')[0];
       const newDate = follow_up_date ? follow_up_date.split('T')[0] : null;
+      const oldDate = rows[0].follow_up_date ? new Date(rows[0].follow_up_date).toISOString().split('T')[0] : null;
       
-      if (newDate && status !== 'Completed') {
+      if (newDate && status !== 'Completed' && newDate !== oldDate) {
         if (newDate < today) {
           return res.status(400).json({ success: false, message: 'Follow-up date cannot be in the past' });
         }
       }
       updateFields.follow_up_date = newDate;
     }
+    
+    // Core fields
     if (voice_of_customer !== undefined) updateFields.voice_of_customer = voice_of_customer;
     if (consolidated_remark !== undefined) updateFields.consolidated_remark = consolidated_remark;
     if (status !== undefined) updateFields.status = status;
+    if (assigned_to_dse !== undefined) updateFields.assigned_to_dse = assigned_to_dse;
     if (req.body.priority !== undefined) updateFields.priority = req.body.priority;
-    if (req.body.last_contacted_date !== undefined) updateFields.last_contacted_date = req.body.last_contacted_date;
+    if (customer_appointment_date !== undefined) updateFields.customer_appointment_date = customer_appointment_date || null;
+    if (customer_location !== undefined) updateFields.customer_location = customer_location;
     
-    // Auto-increment follow_up_count if certain fields change
-    if (status || voice_of_customer || consolidated_remark) {
+    // DSE fields
+    if (visit_status !== undefined) updateFields.visit_status = visit_status;
+    if (interest_level !== undefined) updateFields.interest_level = interest_level;
+    if (deal_stage !== undefined) {
+      updateFields.deal_stage = deal_stage;
+      if (deal_stage === 'Booking Done') updateFields.status = 'Completed';
+      if (deal_stage === 'Lost') updateFields.lost_reason = lost_reason;
+    }
+    if (expected_purchase_timeline !== undefined) updateFields.expected_purchase_timeline = expected_purchase_timeline;
+    if (budget !== undefined) updateFields.budget = (budget === '' || budget === null) ? null : budget;
+    if (dse_notes !== undefined) updateFields.dse_notes = dse_notes;
+
+    // Jio Tag Photo handle
+    if (req.file) {
+      updateFields.jio_tag_photo = `/uploads/jio-tags/${req.file.filename}`;
+    }
+
+    // Set updated_by
+    if (req.user.role === 'dse') {
+      updateFields.last_updated_by = 'DSE';
+    } else if (req.user.role === 'dealer') {
+      updateFields.last_updated_by = 'Telecaller';
+    }
+
+    // Smart Automation: Priority
+    if (interest_level !== undefined || expected_purchase_timeline !== undefined) {
+      const currentInterest = interest_level || rows[0].interest_level;
+      const currentTimeline = expected_purchase_timeline || rows[0].expected_purchase_timeline;
+
+      if (currentInterest === 'High' && currentTimeline === '0–30 days') {
+        updateFields.priority = 'Hot';
+      } else if (currentInterest === 'Medium') {
+        updateFields.priority = 'Warm';
+      } else if (currentInterest === 'Low') {
+        updateFields.priority = 'Cold';
+      }
+    }
+    
+    // Auto-increment follow_up_count
+    if (status || voice_of_customer || consolidated_remark || assigned_to_dse || visit_status || deal_stage) {
       updateFields.follow_up_count = (rows[0].follow_up_count || 0) + 1;
       updateFields.last_contacted_date = new Date();
     }
@@ -149,28 +227,9 @@ router.put('/:id', authenticate, async (req, res) => {
     if (req.user.role === 'admin' && req.body.dealer_id !== undefined) {
       const dealerId = req.body.dealer_id;
       updateFields.dealer_id = dealerId;
-      
-      // Get dealer name and primary district for location update
       if (dealerId) {
         const [dealerRows] = await db.query('SELECT dealer_name FROM dealers WHERE id = ?', [dealerId]);
-        if (dealerRows.length > 0) {
-          updateFields.dealer_name = dealerRows[0].dealer_name;
-        }
-
-        // Also update location to the primary district of this dealer (smallest ID in mapping)
-        const [districtRows] = await db.query(
-          'SELECT district FROM district_dealer_mapping WHERE dealer_id = ? ORDER BY id ASC LIMIT 1', 
-          [dealerId]
-        );
-        if (districtRows.length > 0) {
-          // Capitalize the district name for better display
-          const rawDist = districtRows[0].district;
-          const formattedDist = rawDist.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-          updateFields.location = formattedDist;
-        }
-      } else {
-        updateFields.dealer_name = null;
-        updateFields.location = 'Others';
+        if (dealerRows.length > 0) updateFields.dealer_name = dealerRows[0].dealer_name;
       }
     }
 
@@ -193,19 +252,24 @@ router.put('/:id', authenticate, async (req, res) => {
 // GET /api/leads/stats/summary - Summary stats
 router.get('/stats/summary', authenticate, async (req, res) => {
   try {
-    let dealerFilter = '';
+    let where = ['1=1'];
     let params = [];
 
     if (req.user.role === 'dealer') {
-      dealerFilter = 'WHERE dealer_id = ?';
+      where.push('dealer_id = ?');
       params.push(req.user.dealer_id);
+    } else if (req.user.role === 'dse') {
+      where.push('assigned_to_dse = ?');
+      params.push(req.user.full_name);
     }
 
-    const [total] = await db.query(`SELECT COUNT(*) as count FROM leads ${dealerFilter}`, params);
-    const [pending] = await db.query(`SELECT COUNT(*) as count FROM leads ${dealerFilter} ${dealerFilter ? 'AND' : 'WHERE'} (follow_up_date IS NOT NULL AND follow_up_date <= CURDATE() AND status != 'Completed')`, params);
-    const [completed] = await db.query(`SELECT COUNT(*) as count FROM leads ${dealerFilter} ${dealerFilter ? 'AND' : 'WHERE'} status = 'Completed'`, params);
-    const [inProgress] = await db.query(`SELECT COUNT(*) as count FROM leads ${dealerFilter} ${dealerFilter ? 'AND' : 'WHERE'} status = 'In Progress'`, params);
-    const [onCall] = await db.query(`SELECT COUNT(*) as count FROM leads ${dealerFilter} ${dealerFilter ? 'AND' : 'WHERE'} status = 'On Call'`, params);
+    const whereStr = where.join(' AND ');
+
+    const [total] = await db.query(`SELECT COUNT(*) as count FROM leads WHERE ${whereStr}`, params);
+    const [pending] = await db.query(`SELECT COUNT(*) as count FROM leads WHERE ${whereStr} AND (follow_up_date IS NOT NULL AND follow_up_date <= CURDATE() AND status != 'Completed')`, params);
+    const [completed] = await db.query(`SELECT COUNT(*) as count FROM leads WHERE ${whereStr} AND status = 'Completed'`, params);
+    const [inProgress] = await db.query(`SELECT COUNT(*) as count FROM leads WHERE ${whereStr} AND status = 'In Progress'`, params);
+    const [onCall] = await db.query(`SELECT COUNT(*) as count FROM leads WHERE ${whereStr} AND status = 'On Call'`, params);
 
     res.json({
       success: true,
@@ -221,5 +285,7 @@ router.get('/stats/summary', authenticate, async (req, res) => {
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });
+
+module.exports = router;
 
 module.exports = router;

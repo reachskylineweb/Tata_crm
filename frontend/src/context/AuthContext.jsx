@@ -35,8 +35,23 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  const [dateFrom, setDateFrom] = useState(localStorage.getItem('crm_date_from') || new Date().toISOString().split('T')[0]);
+  const [dateTo, setDateTo] = useState(localStorage.getItem('crm_date_to') || new Date().toISOString().split('T')[0]);
+
+  const updateDateFrom = (val) => { setDateFrom(val); localStorage.setItem('crm_date_from', val); };
+  const updateDateTo = (val) => { setDateTo(val); localStorage.setItem('crm_date_to', val); };
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading, isAdmin: user?.role === 'admin', isCampaign: user?.role === 'campaign_team', isDealer: user?.role === 'dealer' }}>
+    <AuthContext.Provider value={{ 
+      user, login, logout, 
+      loading, 
+      dateFrom, setDateFrom: updateDateFrom,
+      dateTo, setDateTo: updateDateTo,
+      isAdmin: user?.role === 'admin', 
+      isCampaign: user?.role === 'campaign_team', 
+      isDealer: user?.role === 'dealer',
+      isDSE: user?.role === 'dse'
+    }}>
       {children}
     </AuthContext.Provider>
   );
