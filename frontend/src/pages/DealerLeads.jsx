@@ -683,11 +683,11 @@ function LeadTable({ leads, onRefresh, role, type, filters, onFilterChange, filt
                       className={`badge status-${l.status?.toLowerCase().replace(' ', '-')}`} 
                       style={{ 
                         fontWeight: 800, 
-                        fontSize: '0.76rem', 
-                        height: 32, 
-                        minWidth: 125, 
+                        fontSize: '0.72rem', 
+                        height: 28, 
+                        minWidth: 100, 
                         cursor: 'pointer',
-                        padding: '0 12px',
+                        padding: '0 8px',
                         border: '1px solid currentColor',
                         borderRadius: 100,
                         textAlign: 'center',

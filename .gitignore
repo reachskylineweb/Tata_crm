@@ -32,3 +32,8 @@ yarn-error.log*
 *.njsproj
 *.sln
 *.sw?
+
+# Data & Uploads
+backend/uploads/
+*.xls
+*.xlsx
