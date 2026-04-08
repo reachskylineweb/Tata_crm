@@ -3,7 +3,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   LayoutDashboard, Upload, Database, Building2, BarChart3,
-  Settings, LogOut, TrendingUp, FileSpreadsheet, Menu, X
+  Settings, LogOut, TrendingUp, FileSpreadsheet, Menu, X, Users, Copy
 } from 'lucide-react';
 import InstallPWA from './InstallPWA';
 
@@ -11,6 +11,7 @@ const adminNav = [
   { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
   { label: 'Upload Leads', path: '/upload', icon: Upload },
   { label: 'Master Leads', path: '/master-leads', icon: Database },
+  { label: 'Duplicate Datas', path: '/duplicate-leads', icon: Copy },
   { label: 'Dealers', path: '/dealers', icon: Building2 },
   { label: 'Campaign Metrics', path: '/campaign', icon: TrendingUp },
   { label: 'Reports', path: '/reports', icon: BarChart3 },
@@ -19,6 +20,7 @@ const adminNav = [
 const dealerNav = [
   { label: 'Dashboard', path: '/dealer-dashboard', icon: LayoutDashboard },
   { label: 'My Leads', path: '/my-leads', icon: FileSpreadsheet },
+  { label: 'DSE Records', path: '/dealer-records', icon: Users },
 ];
 
 export default function Layout() {
@@ -27,7 +29,10 @@ export default function Layout() {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const navItems = (isDealer || isDSE) ? dealerNav : adminNav.filter(item => {
+  const navItems = (isDealer || isDSE) ? dealerNav.filter(item => {
+    if (isDSE && item.label === 'DSE Records') return false;
+    return true;
+  }) : adminNav.filter(item => {
     if (item.label === 'Upload Leads' && user?.role === 'admin') return false;
     return true;
   });

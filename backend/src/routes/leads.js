@@ -32,7 +32,7 @@ const upload = multer({
 // GET /api/leads - Get leads (filtered by role)
 router.get('/', authenticate, async (req, res) => {
   try {
-    const { page = 1, limit = 50, search = '', status = '', date_from = '', date_to = '', dealer_id = '' } = req.query;
+    const { page = 1, limit = 50, search = '', status = '', date_from = '', date_to = '', dealer_id = '', assigned_to_dse = '' } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
     let where = ['1=1'];
@@ -58,6 +58,10 @@ router.get('/', authenticate, async (req, res) => {
     if (status) {
       where.push('l.status = ?');
       params.push(status);
+    }
+    if (assigned_to_dse) {
+      where.push('l.assigned_to_dse = ?');
+      params.push(assigned_to_dse);
     }
     if (date_from && date_to) {
       where.push('(l.lead_date BETWEEN ? AND ? OR l.follow_up_date BETWEEN ? AND ? OR (l.follow_up_date IS NOT NULL AND l.status != "Completed"))');
@@ -204,7 +208,7 @@ router.put('/:id', authenticate, upload.single('jio_tag_photo'), async (req, res
         updateFields.deal_stage = deal_stage;
         // Note: Booking Done still marks the MASTER status as Completed?
         // Let's keep master status for Dealer.
-        if (deal_stage === 'Booking Done') updateFields.status = 'Completed';
+        if (deal_stage === 'C3 (Vehicle Purchase)') updateFields.status = 'Completed';
         if (deal_stage === 'Lost') updateFields.lost_reason = lost_reason;
       }
       if (expected_purchase_timeline !== undefined) updateFields.expected_purchase_timeline = expected_purchase_timeline;
@@ -289,7 +293,49 @@ router.get('/stats/summary', authenticate, async (req, res) => {
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });
+// GET /api/leads/duplicates - Get duplicate leads
+router.get('/duplicates/all', authenticate, authorize('admin', 'campaign_manager', 'campaign_team'), async (req, res) => {
+  try {
+    const { page = 1, limit = 50, search = '' } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
 
-module.exports = router;
+    let where = ['1=1'];
+    let params = [];
+
+    if (search) {
+      where.push('(dl.full_name LIKE ? OR dl.phone_number LIKE ?)');
+      params.push(`%${search}%`, `%${search}%`);
+    }
+
+    const whereStr = where.join(' AND ');
+
+    const [rows] = await db.query(
+      `SELECT dl.*, ub.file_name as upload_file 
+       FROM duplicate_leads dl
+       LEFT JOIN upload_batches ub ON dl.upload_batch_id = ub.id
+       WHERE ${whereStr}
+       ORDER BY dl.created_at DESC
+       LIMIT ? OFFSET ?`,
+      [...params, parseInt(limit), offset]
+    );
+
+    const [total] = await db.query(`SELECT COUNT(*) as count FROM duplicate_leads dl WHERE ${whereStr}`, params);
+
+    res.json({
+      success: true,
+      data: rows,
+      pagination: {
+        total: total[0].count,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total_pages: Math.ceil(total[0].count / limit)
+      }
+    });
+
+  } catch (err) {
+    console.error('Error fetching duplicates:', err);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
 
 module.exports = router;

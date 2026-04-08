@@ -5,10 +5,10 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 
 const REMARK_OPTIONS = [
-  'Intrested / purchased within 30 days',
-  'Intrested / purchased within 60 days',
-  'Intrested / purchased within 90 days',
-  'not intrested',
+  'Interested / purchased within 30 days',
+  'Interested / purchased within 60 days',
+  'Interested / purchased within 90 days',
+  'not interested',
   'not reachable',
   'already purchased',
   'competitive vehicle'

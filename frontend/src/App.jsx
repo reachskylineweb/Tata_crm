@@ -12,7 +12,9 @@ import UploadLeads from './pages/UploadLeads';
 import Dealers from './pages/Dealers';
 import Reports from './pages/Reports';
 import CampaignMetrics from './pages/CampaignMetrics';
+import DuplicateLeads from './pages/DuplicateLeads';
 import DealerDetails from './pages/DealerDetails';
+import DealerRecords from './pages/DealerRecords';
 
 function ProtectedRoute({ children, allowedRoles }) {
   const { user, loading } = useAuth();
@@ -81,6 +83,11 @@ function AppRoutes() {
             <CampaignMetrics />
           </ProtectedRoute>
         } />
+        <Route path="/duplicate-leads" element={
+          <ProtectedRoute allowedRoles={['admin', 'campaign_team']}>
+            <DuplicateLeads />
+          </ProtectedRoute>
+        } />
 
 
         {/* Dealer & DSE Routes */}
@@ -98,6 +105,11 @@ function AppRoutes() {
         <Route path="/my-leads" element={
           <ProtectedRoute allowedRoles={['dealer', 'dse']}>
             <DealerLeads />
+          </ProtectedRoute>
+        } />
+        <Route path="/dealer-records" element={
+          <ProtectedRoute allowedRoles={['dealer']}>
+            <DealerRecords />
           </ProtectedRoute>
         } />
       </Route>

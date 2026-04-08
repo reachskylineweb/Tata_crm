@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../config/database');
 const { authenticate, authorize } = require('../middleware/auth');
+const bcrypt = require('bcryptjs');
 const router = express.Router();
 
 // GET /api/dealers - List all dealers
@@ -93,6 +94,39 @@ router.get('/:id/leads', authenticate, async (req, res) => {
   }
 });
 
+// POST /api/dealers - Create a new dealer + login account (admin only)
+router.post('/', authenticate, authorize('admin'), async (req, res) => {
+  try {
+    const { dealer_name, contact_person, phone, email, username, password, sheet_name } = req.body;
+
+    if (!dealer_name || !username || !password || !email) {
+      return res.status(400).json({ success: false, message: 'Dealer name, username, email and password are required' });
+    }
+
+    // 1. Create dealer record
+    const [dealerResult] = await db.query(
+      `INSERT INTO dealers (dealer_name, sheet_name, contact_person, phone, email) VALUES (?, ?, ?, ?, ?)`,
+      [dealer_name, sheet_name || dealer_name, contact_person || '', phone || '', email]
+    );
+    const newDealerId = dealerResult.insertId;
+
+    // 2. Create linked user account
+    const password_hash = await bcrypt.hash(password, 10);
+    await db.query(
+      `INSERT INTO users (username, full_name, email, password_hash, role, dealer_id) VALUES (?, ?, ?, ?, 'dealer', ?)`,
+      [username, contact_person || dealer_name, email, password_hash, newDealerId]
+    );
+
+    res.status(201).json({ success: true, message: 'Dealer created successfully', dealer_id: newDealerId });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(400).json({ success: false, message: 'Username or email already exists' });
+    }
+    console.error('Create dealer error:', err);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
 // PUT /api/dealers/:id - Update dealer info (admin only)
 router.put('/:id', authenticate, authorize('admin'), async (req, res) => {
   try {
@@ -116,6 +150,60 @@ router.get('/:id/users', authenticate, authorize('admin'), async (req, res) => {
     );
     res.json({ success: true, data: rows });
   } catch (err) {
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// GET /api/dealers/my/dses-stats - Get DSE list with their stats for the current dealer
+router.get('/my/dses-stats', authenticate, async (req, res) => {
+  try {
+    const dealerId = req.user.dealer_id;
+    if (!dealerId) return res.status(403).json({ success: false, message: 'Only dealers can access this' });
+
+    const [dses] = await db.query(`
+      SELECT 
+        u.id, u.full_name, u.username, u.email,
+        COUNT(l.id) as total_assigned,
+        COUNT(CASE WHEN l.status != 'Completed' THEN 1 END) as total_pending,
+        COUNT(CASE WHEN l.status = 'Completed' THEN 1 END) as total_completed,
+        COUNT(CASE WHEN l.follow_up_date IS NOT NULL AND l.status != 'Completed' THEN 1 END) as total_follow_up
+      FROM users u
+      LEFT JOIN leads l ON u.full_name = l.assigned_to_dse AND l.dealer_id = u.dealer_id
+      WHERE u.dealer_id = ? AND u.role = 'dse'
+      GROUP BY u.id
+    `, [dealerId]);
+
+    res.json({ success: true, data: dses });
+  } catch (err) {
+    console.error('DSE stats error:', err);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// POST /api/dealers/my/dses - Add a new DSE
+router.post('/my/dses', authenticate, async (req, res) => {
+  try {
+    const dealerId = req.user.dealer_id;
+    if (!dealerId) return res.status(403).json({ success: false, message: 'Only dealers can add DSEs' });
+
+    const { username, full_name, email, password } = req.body;
+    if (!username || !full_name || !email || !password) {
+      return res.status(400).json({ success: false, message: 'All fields are required' });
+    }
+
+    const password_hash = await bcrypt.hash(password, 10);
+    
+    await db.query(
+      'INSERT INTO users (username, full_name, email, password_hash, role, dealer_id) VALUES (?, ?, ?, ?, "dse", ?)',
+      [username, full_name, email, password_hash, dealerId]
+    );
+
+    res.json({ success: true, message: 'DSE created successfully' });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(400).json({ success: false, message: 'Username or email already exists' });
+    }
+    console.error('Create DSE error:', err);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });

@@ -87,13 +87,35 @@ export default function AdminDashboard() {
           <p>Global oversight of Tata Motors CRM performance</p>
         </div>
         <div className="page-header-actions">
-          <div className="date-picker-wrap" style={{ display: 'flex', gap: 10, background: '#fff', padding: '6px 14px', borderRadius: 12, border: '1px solid var(--grey-200)', flexWrap: 'wrap' }}>
-            <Calendar size={14} color="var(--grey-400)" />
-            <input type="date" className="date-input-clean" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ border: 'none', fontSize: '0.82rem', fontWeight: 600, outline: 'none' }} />
-            <span style={{ color: 'var(--grey-200)' }}>→</span>
-            <input type="date" className="date-input-clean" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ border: 'none', fontSize: '0.82rem', fontWeight: 600, outline: 'none' }} />
+          <div className="date-picker-wrap" style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: 10, 
+            background: '#fff', 
+            padding: '0 16px', 
+            borderRadius: 12, 
+            border: '1px solid var(--grey-200)', 
+            height: 44,
+            boxShadow: 'var(--shadow-xs)'
+          }}>
+            <Calendar size={16} color="var(--tata-blue)" style={{ opacity: 0.8 }} />
+            <input 
+              type="date" 
+              className="date-input-clean" 
+              value={dateFrom} 
+              onChange={e => setDateFrom(e.target.value)} 
+              style={{ border: 'none', background: 'transparent', fontSize: '0.85rem', fontWeight: 600, color: 'var(--grey-700)', outline: 'none', width: 125 }} 
+            />
+            <span style={{ color: 'var(--grey-300)', fontWeight: 700 }}>→</span>
+            <input 
+              type="date" 
+              className="date-input-clean" 
+              value={dateTo} 
+              onChange={e => setDateTo(e.target.value)} 
+              style={{ border: 'none', background: 'transparent', fontSize: '0.85rem', fontWeight: 600, color: 'var(--grey-700)', outline: 'none', width: 125 }} 
+            />
           </div>
-          <button className="btn btn-primary" onClick={handleExport}><Download size={16} /> Export</button>
+          <button className="btn btn-primary" onClick={handleExport} style={{ borderRadius: 12, height: 44, padding: '0 20px', boxShadow: 'var(--shadow-blue)' }}><Download size={16} /> Export</button>
         </div>
       </div>
 

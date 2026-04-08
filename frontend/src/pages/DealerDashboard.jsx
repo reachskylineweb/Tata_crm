@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer
 } from 'recharts';
@@ -10,9 +11,9 @@ import toast from 'react-hot-toast';
 const STATUS_COLORS = { 'In Progress': '#F79009', 'On Call': '#003A8F', 'Completed': '#12B76A' };
 const REMARK_COLORS = ['#003A8F', '#12B76A', '#F79009', '#D32F2F', '#7B1FA2', '#1565C0', '#388E3C', '#F57C00'];
 
-function StatCard({ label, value, icon: Icon, color, sub }) {
+function StatCard({ label, value, icon: Icon, color, sub, onClick }) {
   return (
-    <div className="stat-card">
+    <div className={`stat-card ${onClick ? 'clickable' : ''}`} onClick={onClick} style={{ cursor: onClick ? 'pointer' : 'default' }}>
       <div className={`stat-icon ${color}`}><Icon size={20} /></div>
       <div className="stat-content">
         <div className="stat-label">{label}</div>
@@ -25,6 +26,7 @@ function StatCard({ label, value, icon: Icon, color, sub }) {
 
 export default function DealerDashboard() {
   const { user, dateFrom, setDateFrom, dateTo, setDateTo } = useAuth();
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -80,10 +82,10 @@ export default function DealerDashboard() {
 
       {/* Stats grid — 5-col desktop, 2-col mobile */}
       <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)', marginBottom: 20 }}>
-        <StatCard label="Total Leads" value={s.total_leads} icon={Users} color="blue" />
-        <StatCard label="Pending Leads" value={s.pending_leads} icon={Clock} color="orange" />
-        <StatCard label="Total Follow-ups" value={s.total_followups} icon={Phone} color="blue" />
-        <StatCard label="Completed" value={s.completed} icon={CheckCircle} color="green" />
+        <StatCard label="Total Leads" value={s.total_leads} icon={Users} color="blue" onClick={() => navigate('/my-leads')} />
+        <StatCard label="Pending Leads" value={s.pending_leads} icon={Clock} color="orange" onClick={() => navigate('/my-leads?filter=pending')} />
+        <StatCard label="Total Follow-ups" value={s.total_followups} icon={Phone} color="blue" onClick={() => navigate('/my-leads?filter=scheduled')} />
+        <StatCard label="Completed" value={s.completed} icon={CheckCircle} color="green" onClick={() => navigate('/my-leads?filter=completed')} />
         <StatCard label="Conversion Rate" value={`${s.conversion_rate || 0}%`} icon={TrendingUp} color="purple" />
       </div>
 

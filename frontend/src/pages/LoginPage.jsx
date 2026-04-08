@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
@@ -10,6 +10,14 @@ export default function LoginPage() {
   const [form, setForm] = useState({ username: '', password: '' });
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
+  const passRef = useRef(null);
+
+  const handleUserEnter = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      passRef.current?.focus();
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -60,10 +68,12 @@ export default function LoginPage() {
               <User size={16} className="search-icon" style={{ color: 'var(--tata-blue)' }} />
               <input
                 type="text"
+                autoFocus
                 placeholder="Enter your username"
                 value={form.username}
                 onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
-                autoComplete="username"
+                onKeyDown={handleUserEnter}
+                autoComplete="off"
               />
             </div>
           </div>
@@ -76,8 +86,9 @@ export default function LoginPage() {
                 type={showPass ? 'text' : 'password'}
                 placeholder="Enter your password"
                 value={form.password}
+                ref={passRef}
                 onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                autoComplete="current-password"
+                autoComplete="off"
               />
               <button type="button" onClick={() => setShowPass(p => !p)}
                 style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--grey-400)', padding: 0 }}>

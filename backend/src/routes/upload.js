@@ -257,8 +257,17 @@ router.post('/leads', authenticate, authorize('admin', 'campaign_team'), upload.
     }
 
     let processedCount = 0;
+    let duplicateCount = 0;
     const errors = [];
     const insertedLeads = [];
+    const duplicateLeads = [];
+
+    // Pre-fetch all existing phone numbers to check against DB
+    const [existingPhonesRow] = await db.query(`SELECT phone_number FROM leads`);
+    const existingPhonesSet = new Set(existingPhonesRow.map(r => r.phone_number));
+    
+    // Also track phones seen in the current batch
+    const batchSeenPhones = new Set();
 
     for (let rowIdx = 0; rowIdx < dataRows.length; rowIdx++) {
       const row = dataRows[rowIdx];
@@ -279,34 +288,61 @@ router.post('/leads', authenticate, authorize('admin', 'campaign_team'), upload.
         let rawDate = createdTimeIdx >= 0 ? row[createdTimeIdx] : null;
         const adjustedDate = adjustLeadDate(rawDate, uploadDate, maxLeadDateInBatch);
 
-        // Find dealer
-        const dealer = await findDealerByDistrict(location);
+        const isDuplicate = phone && (existingPhonesSet.has(phone) || batchSeenPhones.has(phone));
 
-        insertedLeads.push({
-          lead_date: adjustedDate,
-          full_name: fullName,
-          location: location,
-          model: model,
-          phone_number: phone,
-          dealer_id: dealer.id,
-          dealer_name: dealer.dealer_name,
-          upload_batch_id: batchId,
-          status: 'In Progress'
-        });
-        processedCount++;
+        if (isDuplicate) {
+          duplicateLeads.push({
+            lead_date: adjustedDate,
+            full_name: fullName,
+            location: location,
+            model: model,
+            phone_number: phone,
+            upload_batch_id: batchId
+          });
+          duplicateCount++;
+        } else {
+          // Find dealer
+          const dealer = await findDealerByDistrict(location);
+
+          insertedLeads.push({
+            lead_date: adjustedDate,
+            full_name: fullName,
+            location: location,
+            model: model,
+            phone_number: phone,
+            dealer_id: dealer.id,
+            dealer_name: dealer.dealer_name,
+            upload_batch_id: batchId,
+            status: 'In Progress'
+          });
+          processedCount++;
+          if (phone) batchSeenPhones.add(phone);
+        }
       } catch (rowErr) {
         errors.push(`Row ${rowIdx + 2}: ${rowErr.message}`);
       }
     }
 
-        const values = insertedLeads.map(l => [
-          l.lead_date, l.full_name, l.location, l.model, l.phone_number,
-          l.dealer_id, l.dealer_name, l.upload_batch_id, l.status, 'In Progress'
-        ]);
-        await db.query(
-          `INSERT INTO leads (lead_date, full_name, location, model, phone_number, dealer_id, dealer_name, upload_batch_id, status, dse_status) VALUES ?`,
-          [values]
-        );
+    if (insertedLeads.length > 0) {
+      const values = insertedLeads.map(l => [
+        l.lead_date, l.full_name, l.location, l.model, l.phone_number,
+        l.dealer_id, l.dealer_name, l.upload_batch_id, l.status, 'In Progress'
+      ]);
+      await db.query(
+        `INSERT INTO leads (lead_date, full_name, location, model, phone_number, dealer_id, dealer_name, upload_batch_id, status, dse_status) VALUES ?`,
+        [values]
+      );
+    }
+
+    if (duplicateLeads.length > 0) {
+      const dupValues = duplicateLeads.map(l => [
+        l.lead_date, l.full_name, l.location, l.model, l.phone_number, l.upload_batch_id
+      ]);
+      await db.query(
+        `INSERT INTO duplicate_leads (lead_date, full_name, location, model, phone_number, upload_batch_id) VALUES ?`,
+        [dupValues]
+      );
+    }
 
     // Update batch record
     await db.query(
@@ -316,11 +352,12 @@ router.post('/leads', authenticate, authorize('admin', 'campaign_team'), upload.
 
     res.json({
       success: true,
-      message: `Upload successful: ${processedCount} leads processed`,
+      message: `Upload successful: ${processedCount} assigned, ${duplicateCount} duplicates found`,
       data: {
         batch_id: batchId,
         total_rows: dataRows.length,
         processed: processedCount,
+        duplicates: duplicateCount,
         errors: errors.slice(0, 5)
       }
     });

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, Edit2, X, Phone, Calendar, Clock, CheckCircle, Eye, User, MapPin, Truck, Filter, ChevronDown, MessageSquare, Image, Upload, TrendingUp } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { Search, Edit2, X, Phone, Calendar, Clock, CheckCircle, Eye, User, MapPin, Truck, Filter, ChevronDown, MessageSquare, Image, Upload, TrendingUp, RotateCcw } from 'lucide-react';
 import api from '../api/client';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
@@ -7,24 +8,23 @@ import { useAuth } from '../context/AuthContext';
 // Options Constants
 const STATUS_OPTIONS_DEALER = ['In Progress', 'Completed'];
 const REMARK_OPTIONS = [
-  'Intrested / purchased within 30 days',
-  'Intrested / purchased within 60 days',
-  'Intrested / purchased within 90 days',
-  'not intrested',
+  'purchase plan within 30 days',
+  'purchase plan within 60 days',
+  'purchase plan within 90 days',
+  'not interested',
   'not reachable',
   'want second hand vehicle',
   'already purchased',
   'competitive vehicle'
 ];
 const INTERESTED_REMARKS = [
-  'Intrested / purchased within 30 days',
-  'Intrested / purchased within 60 days',
-  'Intrested / purchased within 90 days'
+  'purchase plan within 30 days',
+  'purchase plan within 60 days',
+  'purchase plan within 90 days'
 ];
 const DSE_OPTIONS = ['Ramesh', 'Sam', 'Srinivasan'];
-const VISIT_OPTIONS = ['Visited', 'Test Drive Done'];
-const INTEREST_OPTIONS = ['High', 'Medium', 'Low'];
-const STAGE_OPTIONS = ['Visited', 'Negotiation', 'Quotation Given', 'Booking Done', 'Lost'];
+const VISIT_OPTIONS = ['Physical Visit', 'Telecalling', 'Test Drive'];
+const STAGE_OPTIONS = ['C0 (Customer Inquiry)', 'C1 (Showroom Visitor)', 'C2 (KYC / Documentation)', 'C3 (Vehicle Purchase)', 'Lost'];
 const TIMELINE_OPTIONS = ['0–30 days', '30–60 days', '60–90 days'];
 
 const modelMap = {
@@ -146,11 +146,8 @@ function InterestedModal({ lead, onClose, onSave }) {
 // FULL EDIT MODAL FOR DSE ONLY
 function DSEEditModal({ lead, onClose, onSave }) {
   const [form, setForm] = useState({
-    visit_status: lead.visit_status || '',
-    interest_level: lead.interest_level || '',
     deal_stage: lead.deal_stage === 'New' ? '' : (lead.deal_stage || ''),
     expected_purchase_timeline: lead.expected_purchase_timeline || '',
-    budget: lead.budget || '',
     customer_response: lead.customer_response || '',
     lost_reason: lead.lost_reason || '',
     dse_follow_up_date: lead.dse_follow_up_date ? new Date(lead.dse_follow_up_date).toLocaleDateString('en-CA') : '',
@@ -160,9 +157,7 @@ function DSEEditModal({ lead, onClose, onSave }) {
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
-    // Validation: Identify which fields are missing (except budget and follow-up date)
-    if (!form.visit_status) return toast.error('Visit Status: select this option');
-    if (!form.interest_level) return toast.error('Interest Level: select this option');
+    // Validation: Identify which fields are missing (except follow-up date)
     if (!form.deal_stage) return toast.error('Deal Stage: select this option');
     if (!form.expected_purchase_timeline) return toast.error('Timeline: select this option');
     if (!form.customer_response) return toast.error('Customer Response: select this option');
@@ -197,11 +192,6 @@ function DSEEditModal({ lead, onClose, onSave }) {
                 <option value="">— Select —</option>{VISIT_OPTIONS.map(v => <option key={v}>{v}</option>)}
               </select>
             </div>
-            <div className="form-group" style={{ margin: 0 }}><label className="form-label">Interest Level</label>
-              <select className="form-select" value={form.interest_level} onChange={e => setForm(f => ({ ...f, interest_level: e.target.value }))}>
-                <option value="">— Select —</option>{INTEREST_OPTIONS.map(i => <option key={i}>{i}</option>)}
-              </select>
-            </div>
             <div className="form-group" style={{ margin: 0 }}><label className="form-label">Deal Stage</label>
               <select className="form-select" value={form.deal_stage} onChange={e => setForm(f => ({ ...f, deal_stage: e.target.value }))}>
                 <option value="">— Select —</option>{STAGE_OPTIONS.map(s => <option key={s}>{s}</option>)}
@@ -212,30 +202,27 @@ function DSEEditModal({ lead, onClose, onSave }) {
                 <option value="">— Select —</option>{TIMELINE_OPTIONS.map(t => <option key={t}>{t}</option>)}
               </select>
             </div>
-            <div className="form-group" style={{ margin: 0 }}><label className="form-label">Budget Estimate</label>
-              <input type="text" className="form-control" placeholder="e.g. 8-10 Lakhs" value={form.budget} onChange={e => setForm(f => ({ ...f, budget: e.target.value }))} />
+            <div className="form-group" style={{ margin: 0 }}><label className="form-label">Next Visit Date</label>
+              <input type="date" className="form-control" value={form.dse_follow_up_date} onChange={e => setForm(f => ({ ...f, dse_follow_up_date: e.target.value }))} />
             </div>
-          </div>
-          <div className="form-group" style={{ marginTop: 14 }}><label className="form-label">Next Field Follow-up Date</label>
-            <input type="date" className="form-control" value={form.dse_follow_up_date} onChange={e => setForm(f => ({ ...f, dse_follow_up_date: e.target.value }))} />
           </div>
           {form.deal_stage === 'Lost' && (
             <div className="form-group"><label className="form-label">Reason</label>
               <textarea className="form-control" rows={2} value={form.lost_reason} onChange={e => setForm(f => ({ ...f, lost_reason: e.target.value }))} />
             </div>
           )}
-          <div className="form-group">
+          <div className="form-group" style={{ marginTop: 24 }}>
             <label className="form-label">Customer Response</label>
             <select className="form-select" value={form.customer_response} onChange={e => setForm(f => ({ ...f, customer_response: e.target.value }))}>
               <option value="">— Select Response —</option>
-              <option value="based on Telecaller remark">Based on Telecaller Remark</option>
-              <option value="not intrested">Not Interested</option>
+              <option value="Interested">Interested</option>
+              <option value="Not Interested">Not Interested</option>
             </select>
           </div>
           <div className="form-group">
-            <label className="form-label">Jio Tag Photo</label>
+            <label className="form-label">Geo Tag Photo</label>
             <div
-              onClick={() => document.getElementById('jio-upload').click()}
+              onClick={() => document.getElementById('geo-upload').click()}
               style={{
                 border: '2px dashed var(--grey-200)', borderRadius: 12, padding: '14px',
                 textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s',
@@ -245,10 +232,10 @@ function DSEEditModal({ lead, onClose, onSave }) {
             >
               <Upload size={20} style={{ color: photo ? 'var(--tata-blue)' : 'var(--grey-400)', marginBottom: 4 }} />
               <div style={{ fontSize: '0.78rem', fontWeight: 600, color: photo ? 'var(--tata-blue)' : 'var(--grey-500)' }}>
-                {photo ? photo.name : 'Tap to Upload Jio Tag Photo'}
+                {photo ? photo.name : 'Tap to Upload Geo Tag Photo'}
               </div>
             </div>
-            <input id="jio-upload" type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={(e) => setPhoto(e.target.files[0])} />
+            <input id="geo-upload" type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={(e) => setPhoto(e.target.files[0])} />
           </div>
         </div>
         <div className="modal-footer">
@@ -298,14 +285,6 @@ function DSEViewModal({ lead, onClose }) {
                 <span style={{ fontSize: '0.75rem', color: 'var(--grey-400)', fontWeight: 600 }}>ID: #{lead.id}</span>
               </div>
             </div>
-            {lead.interest_level && (
-              <div style={{ textAlign: 'right' }}>
-                <span style={{ fontSize: '0.65rem', color: 'var(--grey-500)', fontWeight: 800, display: 'block', marginBottom: 5, letterSpacing: 0.5 }}>INTEREST LEVEL</span>
-                <span className={`badge badge-${lead.interest_level === 'High' ? 'red' : lead.interest_level === 'Medium' ? 'yellow' : 'blue'}`} style={{ fontSize: '0.8rem', padding: '5px 12px' }}>
-                  {lead.interest_level}
-                </span>
-              </div>
-            )}
           </div>
           <div style={{ marginBottom: 20 }}>
             <DetailRow 
@@ -314,7 +293,6 @@ function DSEViewModal({ lead, onClose }) {
             />
             <DetailRow label="Visit Status" value={lead.visit_status} />
             <DetailRow label="Expected Purchase Timeline" value={lead.expected_purchase_timeline} />
-            {lead.budget && <DetailRow label="Budget Estimate" value={lead.budget} />}
             {lead.deal_stage === 'Lost' && <DetailRow label="Lost Reason" value={lead.lost_reason} />}
             {lead.dse_follow_up_date && <DetailRow label="Next Visit" value={new Date(lead.dse_follow_up_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} />}
           </div>
@@ -331,10 +309,10 @@ function DSEViewModal({ lead, onClose }) {
             <div style={{ marginTop: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
                 <Image size={15} color="var(--tata-blue)" />
-                <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--tata-blue)', letterSpacing: 0.5 }}>FIELD VISIT PHOTO</span>
+                <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--tata-blue)', letterSpacing: 0.5 }}>GEO TAG PHOTO</span>
               </div>
               <a href={lead.jio_tag_photo} target="_blank" rel="noreferrer">
-                <img src={lead.jio_tag_photo} alt="Jio Tag" style={{ width: '100%', borderRadius: 12, boxShadow: 'var(--shadow-sm)', border: '1px solid var(--grey-100)' }} onError={(e) => e.target.style.display='none'} />
+                <img src={lead.jio_tag_photo} alt="Geo Tag" style={{ width: '100%', borderRadius: 12, boxShadow: 'var(--shadow-sm)', border: '1px solid var(--grey-100)' }} onError={(e) => e.target.style.display='none'} />
               </a>
             </div>
           )}
@@ -536,36 +514,49 @@ function LeadTable({ leads, onRefresh, role, type, filters, onFilterChange, filt
   const [activeLead, setActiveLead] = useState(null);
   const [viewLead, setViewLead] = useState(null);
 
-  const { nameOptions = [], locationOptions = [], modelOptions = [], dseOptions = [], statusOptions = [] } = filterOptions || {};
+  const { nameOptions = [], locationOptions = [], phoneOptions = [], modelOptions = [], dseOptions = [], statusOptions = [] } = filterOptions || {};
 
   if (!leads.length) return null;
 
   return (
     <>
+      <style>{`
+        .lead-table-desktop table.data-table th, 
+        .lead-table-desktop table.data-table td {
+          padding: 8px 10px;
+        }
+        .telecaller-select {
+          width: 140px;
+          text-overflow: ellipsis;
+        }
+      `}</style>
       {/* Desktop table */}
       <div className="card lead-table-desktop" style={{ border: 'none', boxShadow: 'var(--shadow-sm)', overflow: 'visible', borderRadius: 16 }}>
         <table className="data-table">
           <thead>
             <tr>
-              <th style={{ width: 180, paddingLeft: 20 }}>
-                <MultiSelectFilter label={isDSE ? "Name & Appt" : "Name"} options={nameOptions} selected={filters.name || []} onChange={(v) => onFilterChange('name', v)} />
+              <th style={{ minWidth: 130, paddingLeft: 12 }}>
+                <MultiSelectFilter label={isDSE ? "Name" : "Name"} options={nameOptions} selected={filters.name || []} onChange={(v) => onFilterChange('name', v)} />
               </th>
-              <th style={{ width: 180 }}>
-                <MultiSelectFilter label="Location & Phone" options={locationOptions} selected={filters.location || []} onChange={(v) => onFilterChange('location', v)} />
+              <th style={{ minWidth: 100 }}>
+                <MultiSelectFilter label="Location" options={locationOptions} selected={filters.location || []} onChange={(v) => onFilterChange('location', v)} />
               </th>
-              <th><MultiSelectFilter label="Vehicle" options={modelOptions} selected={filters.model || []} onChange={(v) => onFilterChange('model', v)} /></th>
-              <th><MultiSelectFilter label="Telecaller Remark" options={REMARK_OPTIONS} selected={filters.remark || []} onChange={(v) => onFilterChange('remark', v)} /></th>
-              {!isDSE && showFollowupDate && <th style={{ width: 145 }}>TLC Follow up</th>}
-              {!isDSE && <th><MultiSelectFilter label="DSE" options={dseOptions.length ? dseOptions : DSE_OPTIONS} selected={filters.allocation || []} onChange={(v) => onFilterChange('allocation', v)} /></th>}
-              {showFieldInsight && <th style={{ textAlign: 'center', fontSize: '0.72rem', fontWeight: 800, color: 'var(--grey-500)', textTransform: 'uppercase', letterSpacing: 0.5 }}>DSE REMARK</th>}
-              <th style={{ minWidth: 140 }}><MultiSelectFilter label="Progress" options={statusOptions} selected={filters.progress || []} onChange={(v) => onFilterChange('progress', v)} /></th>
-              {isDSE && <th style={{ width: 70, paddingRight: 20 }}>Edit</th>}
+              <th style={{ minWidth: 110 }}>
+                <MultiSelectFilter label="Phone" options={phoneOptions} selected={filters.phone || []} onChange={(v) => onFilterChange('phone', v)} />
+              </th>
+              <th style={{ minWidth: 110 }}><MultiSelectFilter label="Vehicle" options={modelOptions} selected={filters.model || []} onChange={(v) => onFilterChange('model', v)} /></th>
+              <th style={{ minWidth: 135 }}><MultiSelectFilter label="Remark" options={REMARK_OPTIONS} selected={filters.remark || []} onChange={(v) => onFilterChange('remark', v)} /></th>
+              {!isDSE && showFollowupDate && <th style={{ minWidth: 140 }}>TLC Appt</th>}
+              {!isDSE && <th style={{ minWidth: 90 }}><MultiSelectFilter label="DSE" options={dseOptions.length ? dseOptions : DSE_OPTIONS} selected={filters.allocation || []} onChange={(v) => onFilterChange('allocation', v)} /></th>}
+              {showFieldInsight && <th style={{ textAlign: 'center', width: 85, fontSize: '0.68rem', fontWeight: 800, color: 'var(--grey-500)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Log</th>}
+              <th style={{ minWidth: 130, paddingLeft: 10 }}><MultiSelectFilter label="Progress" options={statusOptions} selected={filters.progress || []} onChange={(v) => onFilterChange('progress', v)} /></th>
+              {isDSE && <th style={{ width: 60, paddingRight: 12 }}>Edit</th>}
             </tr>
           </thead>
           <tbody>
             {(leads || []).map((l) => (
               <tr key={l.id}>
-                <td style={{ paddingLeft: 20 }}>
+                <td style={{ paddingLeft: 12 }}>
                   <div style={{ display: 'flex', flexDirection: 'column' }}>
                     <span style={{ fontWeight: 700, color: 'var(--tata-blue)', fontSize: '0.9rem' }}>{l.full_name}</span>
                     {isDSE && l.customer_appointment_date && (
@@ -580,18 +571,22 @@ function LeadTable({ leads, onRefresh, role, type, filters, onFilterChange, filt
                 </td>
                 <td>
                   <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--grey-500)' }}><MapPin size={10} style={{ marginRight: 3 }} /> {l.location}</span>
-                    <a href={`tel:${l.phone_number}`} style={{ color: 'var(--green-500)', fontWeight: 600, fontSize: '0.78rem', marginTop: 2 }}><Phone size={10} style={{ marginRight: 3 }} />{l.phone_number}</a>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--grey-700)', fontWeight: 500 }}><MapPin size={10} style={{ marginRight: 4, color: 'var(--grey-400)' }} />{l.location || '—'}</span>
                   </div>
                 </td>
                 <td>
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: 'var(--tata-blue-50)', color: 'var(--tata-blue)', borderRadius: 7, fontSize: '0.75rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                    <Truck size={12} /> {formatModel(l.model)}
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <a href={`tel:${l.phone_number}`} style={{ color: 'var(--green-600)', fontWeight: 700, fontSize: '0.8rem', textDecoration: 'none' }}><Phone size={10} style={{ marginRight: 4 }} />{l.phone_number || '—'}</a>
+                  </div>
+                </td>
+                <td>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 6px', background: 'var(--tata-blue-50)', color: 'var(--tata-blue)', borderRadius: 6, fontSize: '0.7rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                    <Truck size={10} /> {formatModel(l.model)}
                   </div>
                 </td>
                 <td>
                   {!isDSE ? (
-                    <select className="form-select" style={{ minWidth: 150, height: 36, background: '#F3F4F6', fontSize: '0.78rem', minHeight: 'auto' }} value={l.telecaller_remark || ''} onChange={async (e) => {
+                    <select className="form-select telecaller-select" style={{ height: 32, background: '#F3F4F6', fontSize: '0.75rem', minHeight: 'auto', padding: '4px 8px' }} value={l.telecaller_remark || ''} onChange={async (e) => {
                       const val = e.target.value;
                       if (INTERESTED_REMARKS.includes(val)) setActiveLead({ ...l, telecaller_remark: val });
                       else {
@@ -606,18 +601,18 @@ function LeadTable({ leads, onRefresh, role, type, filters, onFilterChange, filt
                 </td>
                 {!isDSE && showFollowupDate && (
                   <td>
-                    <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+                    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                       <input 
                         type="date" 
                         className="form-control" 
-                        style={{ height: 36, fontSize: '0.78rem', width: 130, minHeight: 'auto' }} 
+                        style={{ height: 32, fontSize: '0.75rem', width: 105, minHeight: 'auto', padding: '4px 8px' }} 
                         id={`date-${l.id}`}
                         defaultValue={l.follow_up_date ? new Date(l.follow_up_date).toLocaleDateString('en-CA') : ''} 
                       />
                       <button 
                         className="btn btn-primary" 
                         title="Confirm Schedule"
-                        style={{ padding: '0 8px', height: 36, minWidth: 'auto', background: 'var(--green-500)', borderColor: 'var(--green-600)' }}
+                        style={{ padding: '0 6px', height: 32, minWidth: 'auto', background: 'var(--green-500)', borderColor: 'var(--green-600)' }}
                         onClick={async () => {
                           const val = document.getElementById(`date-${l.id}`).value;
                           if (!val) return toast.error('Selection required');
@@ -659,11 +654,11 @@ function LeadTable({ leads, onRefresh, role, type, filters, onFilterChange, filt
                         onClick={() => setViewLead(l)} 
                         style={{ 
                           background: 'white', 
-                          border: '1.2px solid var(--tata-blue)', 
+                          border: '1px solid var(--tata-blue)', 
                           color: 'var(--tata-blue)', 
-                          padding: '6px 16px', 
+                          padding: '4px 10px', 
                           borderRadius: 100, 
-                          fontSize: '0.7rem', 
+                          fontSize: '0.65rem', 
                           fontWeight: 700, 
                           cursor: 'pointer' 
                         }}
@@ -677,7 +672,7 @@ function LeadTable({ leads, onRefresh, role, type, filters, onFilterChange, filt
                     )}
                   </td>
                 )}
-                <td style={{ textAlign: 'center' }}>
+                <td style={{ paddingLeft: 10 }}>
                   {!isDSE ? (
                     <select 
                       className={`badge status-${l.status?.toLowerCase().replace(' ', '-')}`} 
@@ -685,13 +680,13 @@ function LeadTable({ leads, onRefresh, role, type, filters, onFilterChange, filt
                         fontWeight: 800, 
                         fontSize: '0.72rem', 
                         height: 28, 
-                        minWidth: 100, 
+                        width: 130, 
                         cursor: 'pointer',
-                        padding: '0 8px',
+                        padding: '0 24px 0 12px',
                         border: '1px solid currentColor',
                         borderRadius: 100,
-                        textAlign: 'center',
-                        appearance: 'none'
+                        textAlign: 'left',
+                        outline: 'none'
                       }} 
                       value={l.status} 
                       onChange={async (e) => {
@@ -723,20 +718,21 @@ function LeadTable({ leads, onRefresh, role, type, filters, onFilterChange, filt
                       style={{ 
                         display: 'inline-flex',
                         alignItems: 'center',
-                        justifyContent: 'center',
-                        minWidth: 125,
-                        height: 32,
-                        fontSize: '0.76rem',
+                        justifyContent: 'flex-start',
+                        paddingLeft: 12,
+                        width: 130,
+                        height: 28,
+                        fontSize: '0.72rem',
                         fontWeight: 800,
                         borderRadius: 100,
-                        textAlign: 'center'
+                        textAlign: 'left'
                       }}
                     >
                       {l.dse_status || 'In Progress'}
                     </span>
                   )}
                 </td>
-                {isDSE && <td style={{ paddingRight: 20 }}><button className="btn btn-primary btn-icon" onClick={() => setActiveLead(l)}><Edit2 size={15} /></button></td>}
+                {isDSE && <td style={{ paddingRight: 10 }}><button className="btn btn-primary btn-icon" onClick={() => setActiveLead(l)}><Edit2 size={14} /></button></td>}
               </tr>
             ))}
           </tbody>
@@ -767,10 +763,13 @@ function LeadTable({ leads, onRefresh, role, type, filters, onFilterChange, filt
 
 export default function DealerLeads() {
   const { user, dateFrom, setDateFrom, dateTo, setDateTo } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [filters, setFilters] = useState({ name: [], location: [], model: [], remark: [], allocation: [], progress: [] });
+  const [filters, setFilters] = useState({ name: [], location: [], phone: [], model: [], remark: [], allocation: [], progress: [] });
+  
+  const filterType = searchParams.get('filter'); // 'pending', 'scheduled', 'completed'
 
   const fetchLeads = useCallback(async () => {
     setLoading(true);
@@ -838,6 +837,7 @@ export default function DealerLeads() {
   const createOptions = (dataset) => ({
     nameOptions: getUniqueOpts(dataset, 'full_name'),
     locationOptions: getUniqueOpts(dataset, 'location'),
+    phoneOptions: getUniqueOpts(dataset, 'phone_number'),
     modelOptions: getUniqueOpts(dataset, 'model', formatModel),
     dseOptions: getUniqueOpts(dataset, 'assigned_to_dse'),
     statusOptions: Array.from(new Set(dataset.map(l => l.status)))
@@ -850,6 +850,7 @@ export default function DealerLeads() {
   const applyFilters = (dataset) => dataset.filter(l => {
     if (filters.name.length && !filters.name.includes(l.full_name)) return false;
     if (filters.location.length && !filters.location.includes(l.location)) return false;
+    if (filters.phone.length && !filters.phone.includes(l.phone_number)) return false;
     if (filters.model.length && !filters.model.includes(formatModel(l.model))) return false;
     if (filters.remark.length && !filters.remark.includes(l.voice_of_customer)) return false;
     if (filters.allocation.length && !filters.allocation.includes(l.assigned_to_dse)) return false;
@@ -891,16 +892,35 @@ export default function DealerLeads() {
         </div>
       </div>
 
-      {/* Search */}
-      <div className="search-bar" style={{ maxWidth: 440, borderRadius: 12, padding: '10px 16px', background: '#fff', border: '1px solid #EAECF0', marginBottom: 24 }}>
-        <Search size={18} className="search-icon" style={{ color: 'var(--tata-blue)' }} />
-        <input placeholder="Quick Lead Lookup..." value={search} onChange={e => setSearch(e.target.value)} />
+      {/* Search & Active Filter Info */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24, flexWrap: 'wrap' }}>
+        <div className="search-bar" style={{ flex: 1, maxWidth: 440, borderRadius: 12, padding: '10px 16px', background: '#fff', border: '1px solid #EAECF0', marginBottom: 0 }}>
+          <Search size={18} className="search-icon" style={{ color: 'var(--tata-blue)' }} />
+          <input placeholder="Quick Lead Lookup..." value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        
+        {filterType && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--tata-blue-50)', padding: '8px 16px', borderRadius: 100, border: '1px solid var(--tata-blue-100)' }}>
+            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--tata-blue)', textTransform: 'capitalize' }}>
+              Showing: {filterType === 'scheduled' ? 'Scheduled Follow-ups' : filterType === 'completed' ? 'Completed Workspace' : 'Pending Leads'}
+            </span>
+            <button 
+              onClick={() => {
+                const newParams = new URLSearchParams(searchParams);
+                newParams.delete('filter');
+                setSearchParams(newParams);
+              }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', color: 'var(--tata-blue)' }}
+              title="Clear Filter"
+            >
+              <RotateCcw size={14} />
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* DSE stats strip removed as per request */}
-
       <div style={{ display: 'flex', flexDirection: 'column', gap: 36, paddingBottom: 80 }}>
-        {active.length > 0 && (
+        {active.length > 0 && (!filterType || filterType === 'pending') && (
           <section>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
               <Calendar size={18} />
@@ -910,7 +930,7 @@ export default function DealerLeads() {
             <LeadTable leads={active} onRefresh={fetchLeads} role={user?.role} type="active" filters={filters} onFilterChange={handleFilterChange} filterOptions={activeOptions} />
           </section>
         )}
-        {followup.length > 0 && (
+        {followup.length > 0 && (!filterType || filterType === 'scheduled') && (
           <section>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
               <Clock size={18} />
@@ -920,7 +940,7 @@ export default function DealerLeads() {
             <LeadTable leads={followup} onRefresh={fetchLeads} role={user?.role} type="scheduled" filters={filters} onFilterChange={handleFilterChange} filterOptions={followupOptions} />
           </section>
         )}
-        {completed.length > 0 && (
+        {completed.length > 0 && (!filterType || filterType === 'completed') && (
           <section>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
               <CheckCircle size={18} />
