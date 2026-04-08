@@ -23,12 +23,21 @@ app.use(cors({
   ],
   credentials: true
 }));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
 app.use('/uploads', express.static(uploadsDir));
 
-// Routes
+/* ---------------- ROOT ROUTE ---------------- */
+app.get('/', (req, res) => {
+  res.json({
+    message: 'Tata Motors CRM Backend Running Successfully 🚀',
+    health: '/api/health'
+  });
+});
+
+/* ---------------- API ROUTES ---------------- */
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/leads', require('./routes/leads'));
 app.use('/api/dealers', require('./routes/dealers'));
@@ -38,12 +47,16 @@ app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/campaign', require('./routes/campaign'));
 app.use('/api/admin', require('./routes/admin'));
 
-// Health check
+/* ---------------- HEALTH CHECK ---------------- */
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', message: 'Tata Motors CRM API is running', time: new Date() });
+  res.json({
+    status: 'OK',
+    message: 'Tata Motors CRM API is running',
+    time: new Date()
+  });
 });
 
-// Error handler
+/* ---------------- ERROR HANDLER ---------------- */
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(err.status || 500).json({
@@ -52,7 +65,8 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
+/* ---------------- START SERVER ---------------- */
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Tata Motors CRM Server running on port ${PORT}`);
 });
 
