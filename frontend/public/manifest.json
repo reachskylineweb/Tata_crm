@@ -1,0 +1,41 @@
+{
+  "short_name": "Tata DSE",
+  "name": "Tata Motors DSE Portal",
+  "description": "Professional Lead Management for Tata Motors Sales Executives",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#003A8F",
+  "background_color": "#ffffff",
+  "orientation": "portrait",
+  "id": "tata-motors-dse-portal",
+  "scope": "/",
+  "launch_handler": {
+    "client_mode": "navigate-new"
+  }
+}
