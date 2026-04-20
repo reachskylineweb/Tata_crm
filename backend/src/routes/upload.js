@@ -358,17 +358,26 @@ router.post('/leads', authenticate, authorize('admin', 'campaign_team'), upload.
     }
 
     // 8. Update Batch Record
-    await db.query(
-      `UPDATE upload_batches SET 
-        status='completed', 
-        total_records=?, 
-        processed_records=?, 
-        duplicate_records=?, 
-        invalid_records=?, 
-        error_log=? 
-       WHERE id=?`,
-      [dataRows.length, stats.processed, stats.duplicate, stats.invalid, errors.length > 0 ? errors.slice(0, 10).join('; ') : null, batchId]
-    );
+    // Safety: Try to update with new columns, fallback to legacy if db not updated yet
+    try {
+      await db.query(
+        `UPDATE upload_batches SET 
+          status='completed', 
+          total_records=?, 
+          processed_records=?, 
+          duplicate_records=?, 
+          invalid_records=?, 
+          error_log=? 
+         WHERE id=?`,
+        [dataRows.length, stats.processed, stats.duplicate, stats.invalid, errors.length > 0 ? errors.slice(0, 10).join('; ') : null, batchId]
+      );
+    } catch (batchErr) {
+      console.warn('[UPLOAD] Legacy DB detected, skipping detailed counts update.');
+      await db.query(
+        `UPDATE upload_batches SET status='completed', total_records=?, processed_records=?, error_log=? WHERE id=?`,
+        [dataRows.length, stats.processed, errors.length > 0 ? errors.slice(0, 10).join('; ') : null, batchId]
+      );
+    }
 
     console.log(`[UPLOAD] Batch ${batchId} done. Added: ${stats.processed}, Dups: ${stats.duplicate}, Invalid: ${stats.invalid}`);
 
