@@ -296,6 +296,7 @@ router.get('/stats/summary', authenticate, async (req, res) => {
 // GET /api/leads/duplicates - Get duplicate leads
 router.get('/duplicates/all', authenticate, authorize('admin', 'campaign_manager', 'campaign_team'), async (req, res) => {
   try {
+    console.log(req.user);
     const { page = 1, limit = 50, search = '' } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
@@ -318,9 +319,10 @@ router.get('/duplicates/all', authenticate, authorize('admin', 'campaign_manager
        LIMIT ? OFFSET ?`,
       [...params, parseInt(limit), offset]
     );
+    console.log(rows);
 
     const [total] = await db.query(`SELECT COUNT(*) as count FROM duplicate_leads dl WHERE ${whereStr}`, params);
-
+    console.log(total);
     res.json({
       success: true,
       data: rows,
